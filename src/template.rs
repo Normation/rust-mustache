@@ -1,15 +1,15 @@
 use std::collections::HashMap;
-use std::mem;
 use std::io::Write;
+use std::mem;
 use std::str;
 
 use compiler::Compiler;
 // for bug!
-use log::{log, error};
+use log::{error, log};
 use parser::Token;
 use serde::Serialize;
 
-use super::{Context, Data, Error, Result, to_data};
+use super::{to_data, Context, Data, Error, Result};
 
 /// `Template` represents a compiled mustache file.
 #[derive(Debug, Clone)]
@@ -32,8 +32,9 @@ pub fn new(ctx: Context, tokens: Vec<Token>, partials: HashMap<String, Vec<Token
 impl Template {
     /// Renders the template with the `Encodable` data.
     pub fn render<W, T>(&self, wr: &mut W, data: &T) -> Result<()>
-    where W: Write,
-          T: Serialize,
+    where
+        W: Write,
+        T: Serialize,
     {
         let data = to_data(data)?;
         self.render_data(wr, &data)
@@ -77,7 +78,12 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    fn render<W: Write>(&mut self, wr: &mut W, stack: &mut Vec<&Data>, tokens: &[Token]) -> Result<()> {
+    fn render<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        tokens: &[Token],
+    ) -> Result<()> {
         for token in tokens.iter() {
             self.render_token(wr, stack, token)?;
         }
@@ -85,26 +91,30 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_token<W: Write>(&mut self, wr: &mut W, stack: &mut Vec<&Data>, token: &Token) -> Result<()> {
+    fn render_token<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        token: &Token,
+    ) -> Result<()> {
         match *token {
-            Token::Text(ref value) => {
-                self.render_text(wr, value)
-            }
-            Token::EscapedTag(ref path, _) => {
-                self.render_etag(wr, stack, path)
-            }
-            Token::UnescapedTag(ref path, _) => {
-                self.render_utag(wr, stack, path)
-            }
+            Token::Text(ref value) => self.render_text(wr, value),
+            Token::JSON(ref path, _) => self.render_json(wr, stack, path, false),
+            Token::JSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
+            Token::TopSection(_, _, _, _, _, _, _, _)
+            | Token::IncompleteTopSection(_, _, _, _)
+            | Token::TopJSON(_, _)
+            | Token::TopJSONMulti(_, _) => todo!(),
+
+            Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
+            Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
             Token::Section(ref path, true, ref children, _, _, _, _, _) => {
                 self.render_inverted_section(wr, stack, path, children)
             }
             Token::Section(ref path, false, ref children, ref otag, _, ref src, _, ref ctag) => {
                 self.render_section(wr, stack, path, children, src, otag, ctag)
             }
-            Token::Partial(ref name, ref indent, _) => {
-                self.render_partial(wr, stack, name, indent)
-            }
+            Token::Partial(ref name, ref indent, _) => self.render_partial(wr, stack, name, indent),
             Token::IncompleteSection(..) => {
                 bug!("render_token should not encounter IncompleteSections");
                 Err(Error::IncompleteSection)
@@ -165,7 +175,12 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_etag<W: Write>(&mut self, wr: &mut W, stack: &mut Vec<&Data>, path: &[String]) -> Result<()> {
+    fn render_etag<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        path: &[String],
+    ) -> Result<()> {
         let mut bytes = vec![];
 
         self.render_utag(&mut bytes, stack, path)?;
@@ -184,7 +199,12 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_utag<W: Write>(&mut self, wr: &mut W, stack: &mut Vec<&Data>, path: &[String]) -> Result<()> {
+    fn render_utag<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        path: &[String],
+    ) -> Result<()> {
         match self.find(path, stack) {
             None => {}
             Some(value) => {
@@ -220,11 +240,78 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_inverted_section<W: Write>(&mut self,
-                                         wr: &mut W,
-                                         stack: &mut Vec<&Data>,
-                                         path: &[String],
-                                         children: &[Token]) -> Result<()> {
+    fn render_json<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        path: &[String],
+        pretty: bool,
+    ) -> Result<()> {
+        match self.find(path, stack) {
+            None => {}
+            Some(value) => {
+                self.write_indent(wr)?;
+
+                // Currently this doesn't allow Option<Option<Foo>>, which
+                // would be un-nameable in the view anyway, so I'm unsure if it's
+                // a real problem. Having {{foo}} render only when `foo = Some(Some(val))`
+                // seems unintuitive and may be surprising in practice.
+                if let Data::Null = *value {
+                    return Ok(());
+                }
+
+                match *value {
+                    Data::String(ref value) => {
+                        self.write_tracking_newlines(wr, value)?;
+                        // let json = json!(value);
+                        // let json = match pretty {
+                        //     true => serde_json::to_string_pretty(&json).unwrap(),
+                        //     false => json.to_string(),
+                        // };
+                        // self.write_tracking_newlines(wr, &json)?;
+                    }
+
+                    Data::Fun(ref fcell) => {
+                        let f = &mut *fcell.borrow_mut();
+                        let tokens = self.render_fun("", "{{", "}}", f)?;
+                        self.render(wr, stack, &tokens)?;
+                    }
+
+                    Data::Vec(ref v) => {
+                        let json = serde_json::to_string(v).unwrap();
+                        let json = match pretty {
+                            true => serde_json::to_string_pretty(&json).unwrap(),
+                            false => json.to_string(),
+                        };
+                        self.write_tracking_newlines(wr, &json)?;
+                    }
+
+                    Data::Map(ref v) => {
+                        let json = serde_json::to_string(v).unwrap();
+                        let json = match pretty {
+                            true => serde_json::to_string_pretty(&json).unwrap(),
+                            false => json.to_string(),
+                        };
+                        self.write_tracking_newlines(wr, &json)?;
+                    }
+
+                    ref value => {
+                        bug!("render_json: unexpected value {:?}", value);
+                    }
+                }
+            }
+        };
+
+        Ok(())
+    }
+
+    fn render_inverted_section<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        path: &[String],
+        children: &[Token],
+    ) -> Result<()> {
         match self.find(path, stack) {
             None => {}
             Some(&Data::Null) => {}
@@ -238,14 +325,16 @@ impl<'a> RenderContext<'a> {
         self.render(wr, stack, children)
     }
 
-    fn render_section<W: Write>(&mut self,
-                                wr: &mut W,
-                                stack: &mut Vec<&Data>,
-                                path: &[String],
-                                children: &[Token],
-                                src: &str,
-                                otag: &str,
-                                ctag: &str) -> Result<()> {
+    fn render_section<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        path: &[String],
+        children: &[Token],
+        src: &str,
+        otag: &str,
+        ctag: &str,
+    ) -> Result<()> {
         match self.find(path, stack) {
             None => {}
             Some(value) => {
@@ -286,11 +375,13 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_partial<W: Write>(&mut self,
-                                wr: &mut W,
-                                stack: &mut Vec<&Data>,
-                                name: &str,
-                                indent: &str) -> Result<()> {
+    fn render_partial<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        name: &str,
+        indent: &str,
+    ) -> Result<()> {
         match self.template.partials.get(name) {
             None => (),
             Some(ref tokens) => {
@@ -305,19 +396,22 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_fun(&self,
-                  src: &str,
-                  otag: &str,
-                  ctag: &str,
-                  f: &mut Box<dyn FnMut(String) -> String + Send + 'static>)
-                  -> Result<Vec<Token>> {
+    fn render_fun(
+        &self,
+        src: &str,
+        otag: &str,
+        ctag: &str,
+        f: &mut Box<dyn FnMut(String) -> String + Send + 'static>,
+    ) -> Result<Vec<Token>> {
         let src = f(src.to_string());
 
-        let compiler = Compiler::new_with(self.template.ctx.clone(),
-                                          src.chars(),
-                                          self.template.partials.clone(),
-                                          otag.to_string(),
-                                          ctag.to_string());
+        let compiler = Compiler::new_with(
+            self.template.ctx.clone(),
+            src.chars(),
+            self.template.partials.clone(),
+            otag.to_string(),
+            ctag.to_string(),
+        );
 
         let (tokens, _) = compiler.compile()?;
         Ok(tokens)
@@ -347,7 +441,7 @@ impl<'a> RenderContext<'a> {
                         break;
                     }
                 }
-                _ => { /* continue searching the stack */ },
+                _ => { /* continue searching the stack */ }
             }
         }
 
@@ -361,16 +455,14 @@ impl<'a> RenderContext<'a> {
 
         for part in path[1..].iter() {
             match *value {
-                Data::Map(ref m) => {
-                    match m.get(part) {
-                        Some(v) => {
-                            value = v;
-                        }
-                        None => {
-                            return None;
-                        }
+                Data::Map(ref m) => match m.get(part) {
+                    Some(v) => {
+                        value = v;
                     }
-                }
+                    None => {
+                        return None;
+                    }
+                },
                 _ => {
                     return None;
                 }
@@ -378,5 +470,60 @@ impl<'a> RenderContext<'a> {
         }
 
         Some(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::compile_str;
+
+    use super::*;
+
+    fn render_data(template: &Template, data: &Data) -> String {
+        let mut bytes = vec![];
+        template
+            .render_data(&mut bytes, data)
+            .expect("Failed to render data");
+        String::from_utf8(bytes).expect("Failed ot encode as String")
+    }
+
+    #[test]
+    fn test_json_simple_string() {
+        let template = compile_str("Hello, {{$name}}").expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("name".to_string(), Data::String("Ferris".to_string()));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "Hello, Ferris".to_string()
+        );
+    }
+
+    #[test]
+    fn test_json_simple_vec() {
+        let template = compile_str("{{$v}}").expect("failed to compile");
+        let v = vec![
+            Data::String("A".to_string()),
+            Data::String("B".to_string()),
+            Data::String("C".to_string()),
+        ];
+        let mut ctx = HashMap::new();
+        ctx.insert("v".to_string(), Data::Vec(v));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "[\"A\",\"B\",\"C\"]".to_string()
+        );
+    }
+
+    #[test]
+    fn test_json_simple_map() {
+        let template = compile_str("{{$v}}").expect("failed to compile");
+        let mut v = HashMap::new();
+        v.insert("k1".to_string(), Data::String("A".to_string()));
+        let mut ctx = HashMap::new();
+        ctx.insert("v".to_string(), Data::Map(v));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "{\"k1\":\"A\"}".to_string()
+        );
     }
 }

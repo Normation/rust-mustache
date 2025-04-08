@@ -1,18 +1,43 @@
 use std::error::Error as StdError;
-use std::mem;
 use std::fmt;
+use std::mem;
+use std::panic;
 
 // for bug!
-use log::{log, error};
+use log::{error, log};
 
 /// `Token` is a section of a compiled mustache string.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     Text(String),
+    JSON(Vec<String>, String),
+    JSONMulti(Vec<String>, String),
+    TopJSON(Vec<String>, String),
+    TopJSONMulti(Vec<String>, String),
     EscapedTag(Vec<String>, String),
     UnescapedTag(Vec<String>, String),
-    Section(Vec<String>, bool, Vec<Token>, String, String, String, String, String),
+    Section(
+        Vec<String>,
+        bool,
+        Vec<Token>,
+        String,
+        String,
+        String,
+        String,
+        String,
+    ),
     IncompleteSection(Vec<String>, bool, String, bool),
+    IncompleteTopSection(Vec<String>, bool, String, bool),
+    TopSection(
+        Vec<String>,
+        bool,
+        Vec<Token>,
+        String,
+        String,
+        String,
+        String,
+        String,
+    ),
     Partial(String, String, String),
 }
 
@@ -35,19 +60,27 @@ pub enum Error {
     __Nonexhaustive,
 }
 
-impl StdError for Error { }
+impl StdError for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Provide more information where possible
         match *self {
-            Error::BadClosingTag(actual, expected) => write!(f, "character {:?} was unexpected in the closing tag, expected {:?}", actual, expected),
+            Error::BadClosingTag(actual, expected) => write!(
+                f,
+                "character {:?} was unexpected in the closing tag, expected {:?}",
+                actual, expected
+            ),
             Error::UnclosedSection(ref name) => write!(f, "found an unclosed section: {:?}", name),
-            Error::EarlySectionClose(ref name) => write!(f, "found a closing tag for an unopened section {:?}", name),
+            Error::EarlySectionClose(ref name) => {
+                write!(f, "found a closing tag for an unopened section {:?}", name)
+            }
             Error::UnclosedTag => write!(f, "found an unclosed tag"),
             Error::UnbalancedUnescapeTag => write!(f, "found an unbalanced unescape tag"),
             Error::EmptyTag => write!(f, "found an empty tag",),
-            Error::MissingSetDelimeterClosingTag => write!(f, "missing the new closing tag in set delimeter tag"),
+            Error::MissingSetDelimeterClosingTag => {
+                write!(f, "missing the new closing tag in set delimeter tag")
+            }
             Error::InvalidSetDelimeterSyntax => write!(f, "invalid set delimeter tag syntax"),
             Error::__Nonexhaustive => unreachable!(),
         }
@@ -243,11 +276,13 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
         // Check that we don't have any incomplete sections.
         for token in self.tokens.iter().rev() {
             if let Token::IncompleteSection(ref path, _, _, _) = *token {
-                return Err(Error::UnclosedSection(path.join(".")))
+                return Err(Error::UnclosedSection(path.join(".")));
             }
         }
 
-        let Parser { tokens, partials, .. } = self;
+        let Parser {
+            tokens, partials, ..
+        } = self;
 
         Ok((tokens, partials))
     }
@@ -355,6 +390,28 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 // ignore comments
                 self.eat_whitespace();
             }
+            '%' => {
+                // Data to be rendered as multi-line JSON representation
+                let name = &content[1..len];
+                let name = get_name_or_implicit(name)?;
+
+                if !name.is_empty() && name[0] == "-top-" {
+                    self.tokens.push(Token::TopJSONMulti(name, tag));
+                } else {
+                    self.tokens.push(Token::JSONMulti(name, tag));
+                }
+            }
+            '$' => {
+                // Data to be rendered as compact JSON representation
+                let name = &content[1..len];
+                let name = get_name_or_implicit(name)?;
+
+                if !name.is_empty() && name[0] == "-top-" {
+                    self.tokens.push(Token::TopJSON(name, tag));
+                } else {
+                    self.tokens.push(Token::JSON(name, tag));
+                }
+            }
             '&' => {
                 let name = &content[1..len];
                 let name = get_name_or_implicit(name)?;
@@ -366,20 +423,27 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                     let name = get_name_or_implicit(name)?;
                     self.tokens.push(Token::UnescapedTag(name, tag));
                 } else {
-                    return Err(Error::UnbalancedUnescapeTag)
+                    return Err(Error::UnbalancedUnescapeTag);
                 }
             }
             '#' => {
                 let newlined = self.eat_whitespace();
 
                 let name = get_name_or_implicit(&content[1..len])?;
-                self.tokens.push(Token::IncompleteSection(name, false, tag, newlined));
+                if !name.is_empty() && name[0] == "-top-" {
+                    self.tokens
+                        .push(Token::IncompleteTopSection(name, false, tag, newlined));
+                } else {
+                    self.tokens
+                        .push(Token::IncompleteSection(name, false, tag, newlined));
+                }
             }
             '^' => {
                 let newlined = self.eat_whitespace();
 
                 let name = get_name_or_implicit(&content[1..len])?;
-                self.tokens.push(Token::IncompleteSection(name, true, tag, newlined));
+                self.tokens
+                    .push(Token::IncompleteSection(name, true, tag, newlined));
             }
             '/' => {
                 self.eat_whitespace();
@@ -387,59 +451,87 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 let name = get_name_or_implicit(&content[1..len])?;
                 let mut children: Vec<Token> = Vec::new();
 
-                loop {
-                    if self.tokens.is_empty() {
-                        return Err(Error::EarlySectionClose(name.join(".")))
-                    }
-
-                    let last = self.tokens.pop();
-
-                    match last {
-                        Some(Token::IncompleteSection(section_name, inverted, osection, _)) => {
-                            children.reverse();
-
-                            // Collect all the children's sources.
-                            let mut srcs = Vec::new();
-                            for child in children.iter() {
-                                match *child {
-                                    Token::Text(ref s) |
-                                    Token::EscapedTag(_, ref s) |
-                                    Token::UnescapedTag(_, ref s) |
-                                    Token::Partial(_, _, ref s) => srcs.push(s.clone()),
-                                    Token::Section(_, _, _, _, ref osection, ref src, ref csection, _) => {
-                                        srcs.push(osection.clone());
-                                        srcs.push(src.clone());
-                                        srcs.push(csection.clone());
-                                    }
-                                    _ => bug!("Incomplete sections should not be nested"),
-                                }
-                            }
-
-                            if section_name == name {
-                                // Cache the combination of all the sources in the
-                                // section. It's unfortunate, but we need to do this in
-                                // case the user uses a function to instantiate the
-                                // tag.
-                                let mut src = String::new();
-                                for s in srcs.iter() {
-                                    src.push_str(s);
-                                }
-
-                                self.tokens.push(Token::Section(name,
-                                                         inverted,
-                                                         children,
-                                                         self.opening_tag.clone(),
-                                                         osection,
-                                                         src,
-                                                         tag,
-                                                         self.closing_tag.clone()));
-                                break;
-                            } else {
-                                return Err(Error::UnclosedSection(section_name.join(".")))
-                            }
+                // FIXME: the children vector is empty
+                if !name.is_empty() && name[0] == "-top-" {
+                    self.tokens.push(Token::TopSection(
+                        name.clone(),
+                        false,
+                        children.clone(),
+                        self.opening_tag.clone(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        self.closing_tag.clone(),
+                    ));
+                } else {
+                    loop {
+                        if self.tokens.is_empty() {
+                            return Err(Error::EarlySectionClose(name.join(".")));
                         }
-                        Some(last_token) => children.push(last_token),
-                        None => (),
+
+                        let last = self.tokens.pop();
+
+                        match last {
+                            Some(Token::IncompleteSection(section_name, inverted, osection, _)) => {
+                                children.reverse();
+
+                                // Collect all the children's sources.
+                                let mut srcs = Vec::new();
+                                for child in children.iter() {
+                                    match *child {
+                                        Token::Text(ref s)
+                                        | Token::EscapedTag(_, ref s)
+                                        | Token::UnescapedTag(_, ref s)
+                                        | Token::Partial(_, _, ref s) => srcs.push(s.clone()),
+                                        Token::Section(
+                                            _,
+                                            _,
+                                            _,
+                                            _,
+                                            ref osection,
+                                            ref src,
+                                            ref csection,
+                                            _,
+                                        ) => {
+                                            srcs.push(osection.clone());
+                                            srcs.push(src.clone());
+                                            srcs.push(csection.clone());
+                                        }
+                                        _ => bug!("Incomplete sections should not be nested"),
+                                    }
+                                }
+
+                                if section_name == name {
+                                    // Cache the combination of all the sources in the
+                                    // section. It's unfortunate, but we need to do this in
+                                    // case the user uses a function to instantiate the
+                                    // tag.
+                                    let mut src = String::new();
+                                    for s in srcs.iter() {
+                                        src.push_str(s);
+                                    }
+
+                                    if !name.is_empty() && name[0] == "-top-" {
+                                        panic!("TOP");
+                                    }
+                                    self.tokens.push(Token::Section(
+                                        name,
+                                        inverted,
+                                        children,
+                                        self.opening_tag.clone(),
+                                        osection,
+                                        src,
+                                        tag,
+                                        self.closing_tag.clone(),
+                                    ));
+                                    break;
+                                } else {
+                                    return Err(Error::UnclosedSection(section_name.join(".")));
+                                }
+                            }
+                            Some(last_token) => children.push(last_token),
+                            None => (),
+                        }
                     }
                 }
             }
@@ -469,7 +561,7 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                     self.closing_tag = s2[pos..].to_string();
                     self.closing_tag_chars = self.closing_tag.chars().collect();
                 } else {
-                    return Err(Error::InvalidSetDelimeterSyntax)
+                    return Err(Error::InvalidSetDelimeterSyntax);
                 }
             }
             _ => {
@@ -547,9 +639,7 @@ fn get_name_or_implicit(name: &str) -> Result<Vec<String>, Error> {
     Ok(if name == "." {
         Vec::new()
     } else {
-        name.split_terminator('.')
-            .map(|x| x.to_string())
-            .collect()
+        name.split_terminator('.').map(|x| x.to_string()).collect()
     })
 }
 
@@ -614,7 +704,10 @@ mod tests {
 
         #[test]
         fn unclosed() {
-            assert_eq!(parse("{{#world}}hi"), Err(Error::UnclosedSection("world".into())))
+            assert_eq!(
+                parse("{{#world}}hi"),
+                Err(Error::UnclosedSection("world".into()))
+            )
         }
 
         #[test]
@@ -643,7 +736,10 @@ mod tests {
 
         #[test]
         fn early_close() {
-            assert_eq!(parse("{{/world}}"), Err(Error::EarlySectionClose("world".into())))
+            assert_eq!(
+                parse("{{/world}}"),
+                Err(Error::EarlySectionClose("world".into()))
+            )
         }
     }
 
@@ -657,7 +753,10 @@ mod tests {
 
         #[test]
         fn unclosed() {
-            assert_eq!(parse("{{^world}}hi"), Err(Error::UnclosedSection("world".into())))
+            assert_eq!(
+                parse("{{^world}}hi"),
+                Err(Error::UnclosedSection("world".into()))
+            )
         }
 
         #[test]
@@ -700,7 +799,10 @@ mod tests {
 
         #[test]
         fn closing_tag_is_whitespace() {
-            assert_eq!(parse("{{=<% =}}"), Err(Error::MissingSetDelimeterClosingTag))
+            assert_eq!(
+                parse("{{=<% =}}"),
+                Err(Error::MissingSetDelimeterClosingTag)
+            )
         }
 
         #[test]
@@ -720,5 +822,35 @@ mod tests {
         // not trigger with "{{{ }}"
         let input = "{{=<% %>=}} <%{ %>";
         assert_eq!(parse(input), Err(Error::UnbalancedUnescapeTag))
+    }
+
+    mod cfengine {
+        use super::*;
+
+        #[test]
+        fn test_json_multi() {
+            assert!(parse("{{%var}}").is_ok());
+        }
+
+        #[test]
+        fn test_json_compact() {
+            assert!(parse("{{$var}}").is_ok());
+        }
+
+        #[test]
+        fn test_top() {
+            assert!(parse("{{%-top-}}").is_ok());
+            assert!(parse("{{$-top-}}").is_ok());
+        }
+
+        #[test]
+        fn test_top_section() {
+            parse("{{#-top-}} {{.}}{{/-top-}}").unwrap();
+        }
+
+        #[test]
+        fn test_at() {
+            parse("{{#-top-}} {{{@}}}{{/-top-}}").unwrap();
+        }
     }
 }

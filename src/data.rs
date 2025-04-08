@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use serde::ser::{SerializeMap, SerializeSeq};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt;
 
 // for bug!
-use log::{log, error};
+use log::{error, log};
 
 pub enum Data {
     Null,
@@ -12,6 +13,34 @@ pub enum Data {
     Vec(Vec<Data>),
     Map(HashMap<String, Data>),
     Fun(RefCell<Box<dyn FnMut(String) -> String + Send>>),
+}
+
+impl serde::Serialize for Data {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match *self {
+            Data::Null => serializer.serialize_none(),
+            Data::String(ref v) => serializer.serialize_str(v),
+            Data::Bool(v) => serializer.serialize_bool(v),
+            Data::Vec(ref v) => {
+                let mut seq = serializer.serialize_seq(Some(v.len()))?;
+                for e in v {
+                    seq.serialize_element(e)?;
+                }
+                seq.end()
+            }
+            Data::Map(ref v) => {
+                let mut map = serializer.serialize_map(Some(v.len()))?;
+                for (k, va) in v {
+                    map.serialize_entry(k, va)?;
+                }
+                map.end()
+            }
+            Data::Fun(_) => serializer.serialize_unit(),
+        }
+    }
 }
 
 impl PartialEq for Data {
@@ -26,7 +55,7 @@ impl PartialEq for Data {
             (&Data::Fun(_), &Data::Fun(_)) => {
                 bug!("Cannot compare closures");
                 false
-            },
+            }
             (_, _) => false,
         }
     }
