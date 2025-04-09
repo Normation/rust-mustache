@@ -1,7 +1,7 @@
 use serde::ser::{SerializeMap, SerializeSeq};
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
+use std::{cell::RefCell, collections::BTreeMap};
 
 // for bug!
 use log::{error, log};
@@ -32,6 +32,7 @@ impl serde::Serialize for Data {
                 seq.end()
             }
             Data::Map(ref v) => {
+                let v: BTreeMap<_, _> = v.into_iter().collect();
                 let mut map = serializer.serialize_map(Some(v.len()))?;
                 for (k, va) in v {
                     map.serialize_entry(k, va)?;

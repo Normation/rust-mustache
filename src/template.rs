@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::io::Write;
 use std::mem;
@@ -101,10 +102,11 @@ impl<'a> RenderContext<'a> {
             Token::Text(ref value) => self.render_text(wr, value),
             Token::JSON(ref path, _) => self.render_json(wr, stack, path, false),
             Token::JSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
-            Token::TopSection(_, _, _, _, _, _, _, _)
-            | Token::IncompleteTopSection(_, _, _, _)
-            | Token::TopJSON(_, _)
-            | Token::TopJSONMulti(_, _) => todo!(),
+            Token::TopJSON(ref path, _) => self.render_json(wr, stack, path, false),
+            Token::TopJSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
+            Token::TopSection(_, _, _, _, _, _, _, _) | Token::IncompleteTopSection(_, _, _, _) => {
+                todo!()
+            }
 
             Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
             Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
@@ -251,58 +253,67 @@ impl<'a> RenderContext<'a> {
         path: &[String],
         pretty: bool,
     ) -> Result<()> {
-        match self.find(path, stack) {
-            None => {}
-            Some(value) => {
-                self.write_indent(wr)?;
+        if !path.is_empty() && path[0] == "-top-" && !stack.is_empty() {
+            let json = match pretty {
+                true => serde_json::to_string_pretty(stack.pop().unwrap()).unwrap(),
+                false => serde_json::to_string(stack.pop().unwrap())
+                    .unwrap()
+                    .to_string(),
+            };
+            self.write_tracking_newlines(wr, &json)?;
+        } else {
+            match self.find(path, stack) {
+                None => {}
+                Some(value) => {
+                    self.write_indent(wr)?;
 
-                // Currently this doesn't allow Option<Option<Foo>>, which
-                // would be un-nameable in the view anyway, so I'm unsure if it's
-                // a real problem. Having {{foo}} render only when `foo = Some(Some(val))`
-                // seems unintuitive and may be surprising in practice.
-                if let Data::Null = *value {
-                    return Ok(());
+                    // Currently this doesn't allow Option<Option<Foo>>, which
+                    // would be un-nameable in the view anyway, so I'm unsure if it's
+                    // a real problem. Having {{foo}} render only when `foo = Some(Some(val))`
+                    // seems unintuitive and may be surprising in practice.
+                    if let Data::Null = *value {
+                        return Ok(());
+                    }
+
+                    match *value {
+                        Data::String(ref v) => {
+                            self.write_tracking_newlines(wr, v)?;
+                        }
+
+                        Data::Bool(ref v) => {
+                            self.write_tracking_newlines(wr, &v.to_string())?;
+                        }
+
+                        Data::Fun(ref fcell) => {
+                            let f = &mut *fcell.borrow_mut();
+                            let tokens = self.render_fun("", "{{", "}}", f)?;
+                            self.render(wr, stack, &tokens)?;
+                        }
+
+                        Data::Vec(ref v) => {
+                            let json = match pretty {
+                                true => serde_json::to_string_pretty(v).unwrap(),
+                                false => serde_json::to_string(v).unwrap().to_string(),
+                            };
+                            self.write_tracking_newlines(wr, &json)?;
+                        }
+
+                        Data::Map(ref v) => {
+                            let v: BTreeMap<_, _> = v.into_iter().collect();
+                            let json = match pretty {
+                                true => serde_json::to_string_pretty(&v).unwrap(),
+                                false => serde_json::to_string(&v).unwrap().to_string(),
+                            };
+                            self.write_tracking_newlines(wr, &json)?;
+                        }
+
+                        ref value => {
+                            bug!("render_json: unexpected value {:?}", value);
+                        }
+                    }
                 }
-
-                match *value {
-                    Data::String(ref v) => {
-                        self.write_tracking_newlines(wr, v)?;
-                    }
-
-                    Data::Bool(ref v) => {
-                        self.write_tracking_newlines(wr, &v.to_string())?;
-                    }
-
-                    Data::Fun(ref fcell) => {
-                        let f = &mut *fcell.borrow_mut();
-                        let tokens = self.render_fun("", "{{", "}}", f)?;
-                        self.render(wr, stack, &tokens)?;
-                    }
-
-                    Data::Vec(ref v) => {
-                        let json = serde_json::to_string(v).unwrap();
-                        let json = match pretty {
-                            true => serde_json::to_string_pretty(&json).unwrap(),
-                            false => json.to_string(),
-                        };
-                        self.write_tracking_newlines(wr, &json)?;
-                    }
-
-                    Data::Map(ref v) => {
-                        let json = serde_json::to_string(v).unwrap();
-                        let json = match pretty {
-                            true => serde_json::to_string_pretty(&json).unwrap(),
-                            false => json.to_string(),
-                        };
-                        self.write_tracking_newlines(wr, &json)?;
-                    }
-
-                    ref value => {
-                        bug!("render_json: unexpected value {:?}", value);
-                    }
-                }
-            }
-        };
+            };
+        }
 
         Ok(())
     }
@@ -545,5 +556,56 @@ mod tests {
         let mut ctx = HashMap::new();
         ctx.insert("b".to_string(), Data::Bool(b));
         assert_eq!(render_data(&template, &Data::Map(ctx)), "true".to_string());
+    }
+
+    #[test]
+    fn test_top_json() {
+        let template = compile_str("{{$-top-}}").expect("failed to compile");
+        let b = true;
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "{\"a\":\"String\",\"b\":true}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_dot_json() {
+        let template = compile_str("{{$.}}").expect("failed to compile");
+        let b = true;
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "{\"a\":\"String\",\"b\":true}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_top_json_multi() {
+        let template = compile_str("{{%-top-}}").expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_dot_json_multi() {
+        let template = compile_str("{{%.}}").expect("failed to compile");
+        let b = true;
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
+        );
     }
 }
