@@ -230,6 +230,10 @@ impl<'a> RenderContext<'a> {
                         self.render(wr, stack, &tokens)?;
                     }
 
+                    Data::Bool(ref b) => {
+                        self.write_tracking_newlines(wr, &b.to_string())?;
+                    }
+
                     ref value => {
                         bug!("render_utag: unexpected value {:?}", value);
                     }
@@ -261,14 +265,12 @@ impl<'a> RenderContext<'a> {
                 }
 
                 match *value {
-                    Data::String(ref value) => {
-                        self.write_tracking_newlines(wr, value)?;
-                        // let json = json!(value);
-                        // let json = match pretty {
-                        //     true => serde_json::to_string_pretty(&json).unwrap(),
-                        //     false => json.to_string(),
-                        // };
-                        // self.write_tracking_newlines(wr, &json)?;
+                    Data::String(ref v) => {
+                        self.write_tracking_newlines(wr, v)?;
+                    }
+
+                    Data::Bool(ref v) => {
+                        self.write_tracking_newlines(wr, &v.to_string())?;
                     }
 
                     Data::Fun(ref fcell) => {
@@ -525,5 +527,23 @@ mod tests {
             render_data(&template, &Data::Map(ctx)),
             "{\"k1\":\"A\"}".to_string()
         );
+    }
+
+    #[test]
+    fn test_json_bool() {
+        let template = compile_str("{{$b}}").expect("failed to compile");
+        let b = true;
+        let mut ctx = HashMap::new();
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "true".to_string());
+    }
+
+    #[test]
+    fn test_bool() {
+        let template = compile_str("{{b}}").expect("failed to compile");
+        let b = true;
+        let mut ctx = HashMap::new();
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "true".to_string());
     }
 }
