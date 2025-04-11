@@ -1,7 +1,6 @@
 use std::error::Error as StdError;
 use std::fmt;
 use std::mem;
-use std::panic;
 
 // for bug!
 use log::{error, log};
@@ -27,7 +26,6 @@ pub enum Token {
         String,
     ),
     IncompleteSection(Vec<String>, bool, String, bool),
-    IncompleteTopSection(Vec<String>, bool, String, bool),
     TopSection(
         Vec<String>,
         bool,
@@ -430,13 +428,8 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 let newlined = self.eat_whitespace();
 
                 let name = get_name_or_implicit(&content[1..len])?;
-                if !name.is_empty() && name[0] == "-top-" {
-                    self.tokens
-                        .push(Token::IncompleteTopSection(name, false, tag, newlined));
-                } else {
-                    self.tokens
-                        .push(Token::IncompleteSection(name, false, tag, newlined));
-                }
+                self.tokens
+                    .push(Token::IncompleteSection(name, false, tag, newlined));
             }
             '^' => {
                 let newlined = self.eat_whitespace();
@@ -451,70 +444,59 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 let name = get_name_or_implicit(&content[1..len])?;
                 let mut children: Vec<Token> = Vec::new();
 
-                // FIXME: the children vector is empty
-                if !name.is_empty() && name[0] == "-top-" {
-                    self.tokens.push(Token::TopSection(
-                        name.clone(),
-                        false,
-                        children.clone(),
-                        self.opening_tag.clone(),
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        self.closing_tag.clone(),
-                    ));
-                } else {
-                    loop {
-                        if self.tokens.is_empty() {
-                            return Err(Error::EarlySectionClose(name.join(".")));
-                        }
+                loop {
+                    if self.tokens.is_empty() {
+                        return Err(Error::EarlySectionClose(name.join(".")));
+                    }
 
-                        let last = self.tokens.pop();
+                    let last = self.tokens.pop();
 
-                        match last {
-                            Some(Token::IncompleteSection(section_name, inverted, osection, _)) => {
-                                children.reverse();
+                    match last {
+                        Some(Token::IncompleteSection(section_name, inverted, osection, _)) => {
+                            children.reverse();
 
-                                // Collect all the children's sources.
-                                let mut srcs = Vec::new();
-                                for child in children.iter() {
-                                    match *child {
-                                        Token::Text(ref s)
-                                        | Token::EscapedTag(_, ref s)
-                                        | Token::UnescapedTag(_, ref s)
-                                        | Token::Partial(_, _, ref s) => srcs.push(s.clone()),
-                                        Token::Section(
-                                            _,
-                                            _,
-                                            _,
-                                            _,
-                                            ref osection,
-                                            ref src,
-                                            ref csection,
-                                            _,
-                                        ) => {
-                                            srcs.push(osection.clone());
-                                            srcs.push(src.clone());
-                                            srcs.push(csection.clone());
-                                        }
-                                        _ => bug!("Incomplete sections should not be nested"),
+                            // Collect all the children's sources.
+                            let mut srcs = Vec::new();
+                            for child in children.iter() {
+                                match *child {
+                                    Token::Text(ref s)
+                                    | Token::JSON(_, ref s)
+                                    | Token::JSONMulti(_, ref s)
+                                    | Token::TopJSON(_, ref s)
+                                    | Token::TopJSONMulti(_, ref s)
+                                    | Token::EscapedTag(_, ref s)
+                                    | Token::UnescapedTag(_, ref s)
+                                    | Token::Partial(_, _, ref s) => srcs.push(s.clone()),
+                                    Token::Section(
+                                        _,
+                                        _,
+                                        _,
+                                        _,
+                                        ref osection,
+                                        ref src,
+                                        ref csection,
+                                        _,
+                                    ) => {
+                                        srcs.push(osection.clone());
+                                        srcs.push(src.clone());
+                                        srcs.push(csection.clone());
                                     }
+                                    _ => bug!("Incomplete sections should not be nested"),
+                                }
+                            }
+
+                            if section_name == name {
+                                // Cache the combination of all the sources in the
+                                // section. It's unfortunate, but we need to do this in
+                                // case the user uses a function to instantiate the
+                                // tag.
+                                let mut src = String::new();
+                                for s in srcs.iter() {
+                                    src.push_str(s);
                                 }
 
-                                if section_name == name {
-                                    // Cache the combination of all the sources in the
-                                    // section. It's unfortunate, but we need to do this in
-                                    // case the user uses a function to instantiate the
-                                    // tag.
-                                    let mut src = String::new();
-                                    for s in srcs.iter() {
-                                        src.push_str(s);
-                                    }
-
-                                    if !name.is_empty() && name[0] == "-top-" {
-                                        panic!("TOP");
-                                    }
-                                    self.tokens.push(Token::Section(
+                                self.tokens.push(if !name.is_empty() && name[0] == "-top-" {
+                                    Token::TopSection(
                                         name,
                                         inverted,
                                         children,
@@ -523,15 +505,26 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                         src,
                                         tag,
                                         self.closing_tag.clone(),
-                                    ));
-                                    break;
+                                    )
                                 } else {
-                                    return Err(Error::UnclosedSection(section_name.join(".")));
-                                }
+                                    Token::Section(
+                                        name,
+                                        inverted,
+                                        children,
+                                        self.opening_tag.clone(),
+                                        osection,
+                                        src,
+                                        tag,
+                                        self.closing_tag.clone(),
+                                    )
+                                });
+                                break;
+                            } else {
+                                return Err(Error::UnclosedSection(section_name.join(".")));
                             }
-                            Some(last_token) => children.push(last_token),
-                            None => (),
                         }
+                        Some(last_token) => children.push(last_token),
+                        None => (),
                     }
                 }
             }
