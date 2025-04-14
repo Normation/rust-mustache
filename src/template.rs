@@ -108,6 +108,9 @@ impl<'a> RenderContext<'a> {
             Token::TopSection(ref path, _, ref children, ref otag, _, ref src, _, ref ctag) => {
                 self.render_section_top(wr, stack, path, children, src, otag, ctag)
             }
+            Token::At => {
+                panic!("{:?} {:?}", stack, token);
+            }
             Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
             Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
             Token::Section(ref path, true, ref children, _, _, _, _, _) => {
@@ -698,5 +701,27 @@ mod tests {
             render_data(&template, &Data::Map(ctx)),
             "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
         );
+    }
+
+    #[test]
+    fn test_vec_at() {
+        let template = compile_str("{{#list}}{{@}} {{/list}}").expect("failed to compile");
+        let v = vec![
+            Data::String("A".to_string()),
+            Data::String("B".to_string()),
+            Data::String("C".to_string()),
+        ];
+        let mut ctx = HashMap::new();
+        ctx.insert("v".to_string(), Data::Vec(v));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "a b ".to_string());
+    }
+
+    #[test]
+    fn test_top_section_at() {
+        let template = compile_str("{{#-top-}}{{@}} {{/-top-}}").expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "a b ".to_string());
     }
 }

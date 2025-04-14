@@ -26,6 +26,7 @@ pub enum Token {
         String,
     ),
     IncompleteSection(Vec<String>, bool, String, bool),
+    At,
     TopSection(
         Vec<String>,
         bool,
@@ -401,8 +402,7 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
             }
             '$' => {
                 // Data to be rendered as compact JSON representation
-                let name = &content[1..len];
-                let name = get_name_or_implicit(name)?;
+                let name = get_name_or_implicit(&content[1..len])?;
 
                 if !name.is_empty() && name[0] == "-top-" {
                     self.tokens.push(Token::TopJSON(name, tag));
@@ -411,14 +411,12 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 }
             }
             '&' => {
-                let name = &content[1..len];
-                let name = get_name_or_implicit(name)?;
+                let name = get_name_or_implicit(&content[1..len])?;
                 self.tokens.push(Token::UnescapedTag(name, tag));
             }
             '{' => {
                 if content.ends_with('}') {
-                    let name = &content[1..len - 1];
-                    let name = get_name_or_implicit(name)?;
+                    let name = get_name_or_implicit(&content[1..len - 1])?;
                     self.tokens.push(Token::UnescapedTag(name, tag));
                 } else {
                     return Err(Error::UnbalancedUnescapeTag);
@@ -437,6 +435,9 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 let name = get_name_or_implicit(&content[1..len])?;
                 self.tokens
                     .push(Token::IncompleteSection(name, true, tag, newlined));
+            }
+            '@' => {
+                self.tokens.push(Token::At);
             }
             '/' => {
                 self.eat_whitespace();
