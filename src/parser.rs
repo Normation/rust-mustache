@@ -26,7 +26,6 @@ pub enum Token {
         String,
     ),
     IncompleteSection(Vec<String>, bool, String, bool),
-    At,
     TopSection(
         Vec<String>,
         bool,
@@ -437,7 +436,8 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                     .push(Token::IncompleteSection(name, true, tag, newlined));
             }
             '@' => {
-                self.tokens.push(Token::At);
+                let name = get_name_or_implicit(&content)?;
+                self.tokens.push(Token::EscapedTag(name, tag));
             }
             '/' => {
                 self.eat_whitespace();
