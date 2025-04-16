@@ -495,7 +495,6 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                 for s in srcs.iter() {
                                     src.push_str(s);
                                 }
-
                                 self.tokens.push(if !name.is_empty() && name[0] == "-top-" {
                                     Token::TopSection(
                                         name,

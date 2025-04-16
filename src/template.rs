@@ -275,15 +275,8 @@ impl<'a> RenderContext<'a> {
                 None => {}
                 Some(value) => {
                     self.write_indent(wr)?;
-                    // Currently this doesn't allow Option<Option<Foo>>, which
-                    // would be un-nameable in the view anyway, so I'm unsure if it's
-                    // a real problem. Having {{foo}} render only when `foo = Some(Some(val))`
-                    // seems unintuitive and may be surprising in practice.
-                    if let Data::Null = *value {
-                        return Ok(());
-                    }
-
                     match *value {
+                        Data::Null => {}
                         Data::String(ref v) => {
                             self.write_tracking_newlines(wr, v)?;
                         }
@@ -301,9 +294,6 @@ impl<'a> RenderContext<'a> {
                         Data::Map(ref v) => {
                             let v: BTreeMap<_, _> = v.into_iter().collect();
                             self.write_tracking_newlines_json(wr, &v, pretty)?;
-                        }
-                        ref value => {
-                            bug!("render_json: unexpected value {:?}", value);
                         }
                     }
                 }
@@ -347,67 +337,13 @@ impl<'a> RenderContext<'a> {
         for v in nstack {
             match Some(v) {
                 None => {}
-                Some(value) => {
-                    match *value {
-                        Data::Null => {
-                            // do nothing
-                        }
-                        Data::Bool(_) => {
-                            stack.push(value);
-                            self.render(wr, stack, children)?;
-                            stack.pop();
-                        }
-                        // Data::Bool(false) => (),
-                        Data::String(ref val) => {
-                            if !val.is_empty() {
-                                stack.push(value);
-                                self.render(wr, stack, children)?;
-                                stack.pop();
-                            }
-                        }
-                        Data::Vec(ref vs) => {
-                            for v in vs.iter() {
-                                stack.push(v);
-                                self.render(wr, stack, children)?;
-                                stack.pop();
-                            }
-                        }
-                        Data::Map(_) => {
-                            stack.push(value);
-                            self.render(wr, stack, children)?;
-                            stack.pop();
-                        }
-                        Data::Fun(ref fcell) => {
-                            let f = &mut *fcell.borrow_mut();
-                            let tokens = self.render_fun(src, otag, ctag, f)?;
-                            self.render(wr, stack, &tokens)?;
-                        }
+                Some(value) => match *value {
+                    Data::Null => {}
+                    Data::Bool(_) => {
+                        stack.push(value);
+                        self.render(wr, stack, children)?;
+                        stack.pop();
                     }
-                }
-            };
-        }
-        Ok(())
-    }
-
-    fn render_section<W: Write>(
-        &mut self,
-        wr: &mut W,
-        stack: &mut Vec<&Data>,
-        path: &[String],
-        children: &[Token],
-        src: &str,
-        otag: &str,
-        ctag: &str,
-    ) -> Result<()> {
-        match self.find(path, stack) {
-            None => {}
-            Some(value) => {
-                match *value {
-                    Data::Null => {
-                        // do nothing
-                    }
-                    Data::Bool(true) => self.render(wr, stack, children)?,
-                    Data::Bool(false) => (),
                     Data::String(ref val) => {
                         if !val.is_empty() {
                             stack.push(value);
@@ -432,8 +368,53 @@ impl<'a> RenderContext<'a> {
                         let tokens = self.render_fun(src, otag, ctag, f)?;
                         self.render(wr, stack, &tokens)?;
                     }
+                },
+            };
+        }
+        Ok(())
+    }
+
+    fn render_section<W: Write>(
+        &mut self,
+        wr: &mut W,
+        stack: &mut Vec<&Data>,
+        path: &[String],
+        children: &[Token],
+        src: &str,
+        otag: &str,
+        ctag: &str,
+    ) -> Result<()> {
+        match self.find(path, stack) {
+            None => {}
+            Some(value) => match *value {
+                Data::Null => {}
+                Data::Bool(true) => self.render(wr, stack, children)?,
+                Data::Bool(false) => (),
+                Data::String(ref val) => {
+                    if !val.is_empty() {
+                        stack.push(value);
+                        self.render(wr, stack, children)?;
+                        stack.pop();
+                    }
                 }
-            }
+                Data::Vec(ref vs) => {
+                    for v in vs.iter() {
+                        stack.push(v);
+                        self.render(wr, stack, children)?;
+                        stack.pop();
+                    }
+                }
+                Data::Map(_) => {
+                    stack.push(value);
+                    self.render(wr, stack, children)?;
+                    stack.pop();
+                }
+                Data::Fun(ref fcell) => {
+                    let f = &mut *fcell.borrow_mut();
+                    let tokens = self.render_fun(src, otag, ctag, f)?;
+                    self.render(wr, stack, &tokens)?;
+                }
+            },
         };
         Ok(())
     }
