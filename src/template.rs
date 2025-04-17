@@ -267,8 +267,8 @@ impl<'a> RenderContext<'a> {
         path: &[String],
         pretty: bool,
     ) -> Result<()> {
-        if !path.is_empty() && path[0] == "-top-" && !stack.is_empty() {
-            let v = stack.pop().unwrap();
+        if path.first() == Some(&"-top-".to_string()) && !stack.is_empty() {
+            let v = stack.last().unwrap();
             self.write_tracking_newlines_json(wr, &v, pretty)?;
         } else {
             match self.find(path, stack) {
@@ -677,6 +677,51 @@ mod tests {
         assert_eq!(
             render_data(&template, &Data::Map(ctx)),
             "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
+        );
+    }
+
+    #[test]
+    fn test_boolean_section() {
+        let template = compile_str(
+            "{{#bt}}This text is rendered!{{/bt}}{{#bf}}This text is NOT rendered!{{/bf}}",
+        )
+        .expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("bt".to_string(), Data::Bool(true));
+        ctx.insert("bf".to_string(), Data::Bool(false));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "This text is rendered!".to_string()
+        );
+    }
+
+    #[test]
+    fn test_rendering_vec_map_top() {
+        let t = "{{#bf}}This text is NOT rendered{{/bf}}{{#fruits}}- {{$.}}\n{{/fruits}}\n{{$m}}\n{{$m.key3}}\n{{%-top-}}\n{{#bt}}This text is rendered!{{/bt}}";
+        let template = compile_str(t).expect("failed to compile");
+        let mut ctx = HashMap::new();
+        let v = vec![
+            Data::String("Apple".to_string()),
+            Data::String("Cherry".to_string()),
+            Data::String("Orange".to_string()),
+        ];
+        let v2 = vec![
+            Data::Bool(true),
+            Data::String("String1".to_string()),
+            Data::Bool(false),
+        ];
+        ctx.insert("fruits".to_string(), Data::Vec(v));
+
+        let mut m = HashMap::new();
+        m.insert("key1".to_string(), Data::String("Value1".to_string()));
+        m.insert("key2".to_string(), Data::Bool(true));
+        m.insert("key3".to_string(), Data::Vec(v2));
+        ctx.insert("m".to_string(), Data::Map(m));
+        ctx.insert("bt".to_string(), Data::Bool(true));
+        ctx.insert("bf".to_string(), Data::Bool(false));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "- Apple\n- Cherry\n- Orange\n{\"key1\":\"Value1\",\"key2\":true,\"key3\":[true,\"String1\",false]}\n[true,\"String1\",false]\n{\n  \"bf\": false,\n  \"bt\": true,\n  \"fruits\": [\n    \"Apple\",\n    \"Cherry\",\n    \"Orange\"\n  ],\n  \"m\": {\n    \"key1\": \"Value1\",\n    \"key2\": true,\n    \"key3\": [\n      true,\n      \"String1\",\n      false\n    ]\n  }\n}\nThis text is rendered!"
         );
     }
 
