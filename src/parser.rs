@@ -436,8 +436,9 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                     .push(Token::IncompleteSection(name, true, tag, newlined));
             }
             '@' => {
-                let name = get_name_or_implicit(&content)?;
-                self.tokens.push(Token::EscapedTag(name, tag));
+                // let name = get_name_or_implicit(&content)?;
+                // self.tokens.push(Token::EscapedTag(name, tag));
+                todo!();
             }
             '/' => {
                 self.eat_whitespace();
