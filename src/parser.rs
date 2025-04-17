@@ -9,6 +9,10 @@ use log::{error, log};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     Text(String),
+    JSON(Vec<String>, String),
+    JSONMulti(Vec<String>, String),
+    TopJSON(Vec<String>, String),
+    TopJSONMulti(Vec<String>, String),
     EscapedTag(Vec<String>, String),
     UnescapedTag(Vec<String>, String),
     Section(
@@ -22,6 +26,16 @@ pub enum Token {
         String,
     ),
     IncompleteSection(Vec<String>, bool, String, bool),
+    TopSection(
+        Vec<String>,
+        bool,
+        Vec<Token>,
+        String,
+        String,
+        String,
+        String,
+        String,
+    ),
     Partial(String, String, String),
 }
 
@@ -374,15 +388,36 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 // ignore comments
                 self.eat_whitespace();
             }
-            '&' => {
+            '%' => {
+                // Data to be rendered as multi-line JSON representation
                 let name = &content[1..len];
                 let name = get_name_or_implicit(name)?;
+
+                self.tokens
+                    .push(if name.first() == Some(&"-top-".to_string()) {
+                        Token::TopJSONMulti(name, tag)
+                    } else {
+                        Token::JSONMulti(name, tag)
+                    });
+            }
+            '$' => {
+                // Data to be rendered as compact JSON representation
+                let name = get_name_or_implicit(&content[1..len])?;
+
+                self.tokens
+                    .push(if name.first() == Some(&"-top-".to_string()) {
+                        Token::TopJSON(name, tag)
+                    } else {
+                        Token::JSON(name, tag)
+                    });
+            }
+            '&' => {
+                let name = get_name_or_implicit(&content[1..len])?;
                 self.tokens.push(Token::UnescapedTag(name, tag));
             }
             '{' => {
                 if content.ends_with('}') {
-                    let name = &content[1..len - 1];
-                    let name = get_name_or_implicit(name)?;
+                    let name = get_name_or_implicit(&content[1..len - 1])?;
                     self.tokens.push(Token::UnescapedTag(name, tag));
                 } else {
                     return Err(Error::UnbalancedUnescapeTag);
@@ -401,6 +436,11 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 let name = get_name_or_implicit(&content[1..len])?;
                 self.tokens
                     .push(Token::IncompleteSection(name, true, tag, newlined));
+            }
+            '@' => {
+                // let name = get_name_or_implicit(&content)?;
+                // self.tokens.push(Token::EscapedTag(name, tag));
+                todo!();
             }
             '/' => {
                 self.eat_whitespace();
@@ -424,6 +464,10 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                             for child in children.iter() {
                                 match *child {
                                     Token::Text(ref s)
+                                    | Token::JSON(_, ref s)
+                                    | Token::JSONMulti(_, ref s)
+                                    | Token::TopJSON(_, ref s)
+                                    | Token::TopJSONMulti(_, ref s)
                                     | Token::EscapedTag(_, ref s)
                                     | Token::UnescapedTag(_, ref s)
                                     | Token::Partial(_, _, ref s) => srcs.push(s.clone()),
@@ -454,17 +498,30 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                 for s in srcs.iter() {
                                     src.push_str(s);
                                 }
-
-                                self.tokens.push(Token::Section(
-                                    name,
-                                    inverted,
-                                    children,
-                                    self.opening_tag.clone(),
-                                    osection,
-                                    src,
-                                    tag,
-                                    self.closing_tag.clone(),
-                                ));
+                                self.tokens
+                                    .push(if name.first() == Some(&"-top-".to_string()) {
+                                        Token::TopSection(
+                                            name,
+                                            inverted,
+                                            children,
+                                            self.opening_tag.clone(),
+                                            osection,
+                                            src,
+                                            tag,
+                                            self.closing_tag.clone(),
+                                        )
+                                    } else {
+                                        Token::Section(
+                                            name,
+                                            inverted,
+                                            children,
+                                            self.opening_tag.clone(),
+                                            osection,
+                                            src,
+                                            tag,
+                                            self.closing_tag.clone(),
+                                        )
+                                    });
                                 break;
                             } else {
                                 return Err(Error::UnclosedSection(section_name.join(".")));
@@ -762,5 +819,35 @@ mod tests {
         // not trigger with "{{{ }}"
         let input = "{{=<% %>=}} <%{ %>";
         assert_eq!(parse(input), Err(Error::UnbalancedUnescapeTag))
+    }
+
+    mod cfengine {
+        use super::*;
+
+        #[test]
+        fn test_json_multi() {
+            assert!(parse("{{%var}}").is_ok());
+        }
+
+        #[test]
+        fn test_json_compact() {
+            assert!(parse("{{$var}}").is_ok());
+        }
+
+        #[test]
+        fn test_top() {
+            assert!(parse("{{%-top-}}").is_ok());
+            assert!(parse("{{$-top-}}").is_ok());
+        }
+
+        #[test]
+        fn test_top_section() {
+            parse("{{#-top-}} {{.}}{{/-top-}}").unwrap();
+        }
+
+        #[test]
+        fn test_at() {
+            parse("{{#-top-}} {{{@}}}{{/-top-}}").unwrap();
+        }
     }
 }
