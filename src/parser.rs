@@ -393,21 +393,23 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 let name = &content[1..len];
                 let name = get_name_or_implicit(name)?;
 
-                if !name.is_empty() && name[0] == "-top-" {
-                    self.tokens.push(Token::TopJSONMulti(name, tag));
-                } else {
-                    self.tokens.push(Token::JSONMulti(name, tag));
-                }
+                self.tokens
+                    .push(if name.first() == Some(&"-top-".to_string()) {
+                        Token::TopJSONMulti(name, tag)
+                    } else {
+                        Token::JSONMulti(name, tag)
+                    });
             }
             '$' => {
                 // Data to be rendered as compact JSON representation
                 let name = get_name_or_implicit(&content[1..len])?;
 
-                if !name.is_empty() && name[0] == "-top-" {
-                    self.tokens.push(Token::TopJSON(name, tag));
-                } else {
-                    self.tokens.push(Token::JSON(name, tag));
-                }
+                self.tokens
+                    .push(if name.first() == Some(&"-top-".to_string()) {
+                        Token::TopJSON(name, tag)
+                    } else {
+                        Token::JSON(name, tag)
+                    });
             }
             '&' => {
                 let name = get_name_or_implicit(&content[1..len])?;
@@ -496,29 +498,30 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                 for s in srcs.iter() {
                                     src.push_str(s);
                                 }
-                                self.tokens.push(if !name.is_empty() && name[0] == "-top-" {
-                                    Token::TopSection(
-                                        name,
-                                        inverted,
-                                        children,
-                                        self.opening_tag.clone(),
-                                        osection,
-                                        src,
-                                        tag,
-                                        self.closing_tag.clone(),
-                                    )
-                                } else {
-                                    Token::Section(
-                                        name,
-                                        inverted,
-                                        children,
-                                        self.opening_tag.clone(),
-                                        osection,
-                                        src,
-                                        tag,
-                                        self.closing_tag.clone(),
-                                    )
-                                });
+                                self.tokens
+                                    .push(if name.first() == Some(&"-top-".to_string()) {
+                                        Token::TopSection(
+                                            name,
+                                            inverted,
+                                            children,
+                                            self.opening_tag.clone(),
+                                            osection,
+                                            src,
+                                            tag,
+                                            self.closing_tag.clone(),
+                                        )
+                                    } else {
+                                        Token::Section(
+                                            name,
+                                            inverted,
+                                            children,
+                                            self.opening_tag.clone(),
+                                            osection,
+                                            src,
+                                            tag,
+                                            self.closing_tag.clone(),
+                                        )
+                                    });
                                 break;
                             } else {
                                 return Err(Error::UnclosedSection(section_name.join(".")));
