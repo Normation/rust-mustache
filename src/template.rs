@@ -105,8 +105,8 @@ impl<'a> RenderContext<'a> {
             Token::JSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
             Token::TopJSON(ref path, _) => self.render_json(wr, stack, path, false),
             Token::TopJSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
-            Token::TopSection(ref path, _, ref children, ref otag, _, ref src, _, ref ctag) => {
-                self.render_section_top(wr, stack, path, children, src, otag, ctag)
+            Token::TopSection(_, _, ref children, ref otag, _, ref src, _, ref ctag) => {
+                self.render_section_top(wr, stack, children, src, otag, ctag)
             }
             Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
             Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
@@ -326,7 +326,6 @@ impl<'a> RenderContext<'a> {
         &mut self,
         wr: &mut W,
         stack: &mut Vec<&Data>,
-        _path: &[String],
         children: &[Token],
         src: &str,
         otag: &str,
