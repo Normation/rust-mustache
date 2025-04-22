@@ -9,6 +9,7 @@ use log::{error, log};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     Text(String),
+    At(Vec<String>),
     JSON(Vec<String>, String),
     JSONMulti(Vec<String>, String),
     TopJSON(Vec<String>, String),
@@ -438,9 +439,15 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                     .push(Token::IncompleteSection(name, true, tag, newlined));
             }
             '@' => {
-                // let name = get_name_or_implicit(&content)?;
-                // self.tokens.push(Token::EscapedTag(name, tag));
-                todo!();
+                for t in self.tokens.iter().rev() {
+                    match t {
+                        Token::IncompleteSection(section_name, _, _, _) => {
+                            self.tokens.push(Token::At(section_name.clone()));
+                            break;
+                        }
+                        _ => continue,
+                    }
+                }
             }
             '/' => {
                 self.eat_whitespace();
