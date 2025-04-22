@@ -55,7 +55,7 @@ impl MapBuilder {
         V: Into<String>,
     {
         let MapBuilder { mut data } = self;
-        data.insert(key.into(), Data::String(value.into()));
+        data.insert(key.into(), Data::String(value.into(), "".to_string()));
         MapBuilder { data: data }
     }
 
@@ -73,7 +73,7 @@ impl MapBuilder {
         K: Into<String>,
     {
         let MapBuilder { mut data } = self;
-        data.insert(key.into(), Data::Bool(value));
+        data.insert(key.into(), Data::Bool(value, "".to_string()));
         MapBuilder { data: data }
     }
 
@@ -155,7 +155,7 @@ impl MapBuilder {
     /// Return the built `Data`.
     #[inline]
     pub fn build(self) -> Data {
-        Data::Map(self.data)
+        Data::Map(self.data, "".to_string())
     }
 }
 
@@ -200,7 +200,7 @@ impl VecBuilder {
     #[inline]
     pub fn push_str<T: ToString>(self, value: T) -> VecBuilder {
         let VecBuilder { mut data } = self;
-        data.push(Data::String(value.to_string()));
+        data.push(Data::String(value.to_string(), "".to_string()));
         VecBuilder { data: data }
     }
 
@@ -216,7 +216,7 @@ impl VecBuilder {
     #[inline]
     pub fn push_bool(self, value: bool) -> VecBuilder {
         let VecBuilder { mut data } = self;
-        data.push(Data::Bool(value));
+        data.push(Data::Bool(value, "".to_string()));
         VecBuilder { data: data }
     }
 
@@ -295,6 +295,6 @@ impl VecBuilder {
 
     #[inline]
     pub fn build(self) -> Data {
-        Data::Vec(self.data)
+        Data::Vec(self.data, "".to_string())
     }
 }
