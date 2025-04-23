@@ -69,6 +69,7 @@ struct RenderContext<'a> {
     template: &'a Template,
     indent: String,
     line_start: bool,
+    at: String,
 }
 
 impl<'a> RenderContext<'a> {
@@ -77,6 +78,7 @@ impl<'a> RenderContext<'a> {
             template: template,
             indent: "".to_string(),
             line_start: true,
+            at: "".to_string(),
         }
     }
 
@@ -101,7 +103,7 @@ impl<'a> RenderContext<'a> {
     ) -> Result<()> {
         match *token {
             Token::Text(ref value) => self.render_text(wr, value),
-            Token::At(ref section_name) => self.render_at(wr, stack, section_name),
+            Token::At(_) => self.render_at(wr),
             Token::JSON(ref path, _) => self.render_json(wr, stack, path, false),
             Token::JSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
             Token::TopJSON(ref path, _) => self.render_json(wr, stack, path, false),
@@ -144,27 +146,10 @@ impl<'a> RenderContext<'a> {
         Ok(())
     }
 
-    fn render_at<W: Write>(
-        &mut self,
-        wr: &mut W,
-        stack: &mut Vec<&Data>,
-        section_name: &[String],
-    ) -> Result<()> {
-        match self.find(section_name, stack) {
-            Some(d) => {
-                self.write_indent(wr)?;
-
-                let last = stack.last().unwrap();
-                match d {
-                    Data::Vec(v, _) => {
-                        // let index = v.iter().position(|x| x == *last).unwrap();
-                        let index = last.get_index_or_key();
-                        self.write_tracking_newlines(wr, index)?;
-                    }
-                    _ => {}
-                }
-            }
-            None => {}
+    fn render_at<W: Write>(&mut self, wr: &mut W) -> Result<()> {
+        if !self.at.is_empty() {
+            let at = self.at.clone();
+            self.write_tracking_newlines(wr, &at)?;
         }
         Ok(())
     }
@@ -438,9 +423,11 @@ impl<'a> RenderContext<'a> {
                     //     })
                     //     .collect::<Vec<_>>();
 
-                    for v in vs.iter() {
+                    for (i, v) in vs.iter().enumerate() {
                         stack.push(v);
+                        self.at = i.to_string();
                         self.render(wr, stack, children)?;
+                        self.at = "".to_string();
                         stack.pop();
                     }
                 }
