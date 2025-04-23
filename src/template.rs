@@ -279,7 +279,7 @@ impl<'a> RenderContext<'a> {
         pretty: bool,
     ) -> Result<()> {
         if path.first() == Some(&"-top-".to_string()) && !stack.is_empty() {
-            let v = stack.last().unwrap();
+            let v = stack.first().unwrap();
             self.write_tracking_newlines_json(wr, &v, pretty)?;
         } else {
             match self.find(path, stack) {
@@ -794,6 +794,37 @@ mod tests {
         assert_eq!(
             render_data(&template, &Data::Map(ctx)),
             "a String b true ".to_string()
+        );
+    }
+
+    #[test]
+    fn test_top_in_top_section_at() {
+        let template =
+            compile_str("{{#-top-}}{{@}} {{$-top-}} {{/-top-}}").expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "a {\"a\":\"String\",\"b\":true} b {\"a\":\"String\",\"b\":true} ".to_string()
+        );
+    }
+
+    #[test]
+    fn test_top_section_inside_section() {
+        let template = compile_str("{{#v}}{{@}} {{#-top-}}{{@}} {{$.}} {{/-top-}} {{/v}}")
+            .expect("failed to compile");
+        let v = vec![
+            Data::String("A".to_string()),
+            Data::String("B".to_string()),
+            Data::String("C".to_string()),
+        ];
+        let mut ctx = HashMap::new();
+        ctx.insert("v".to_string(), Data::Vec(v));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "0 v [\"A\",\"B\",\"C\"]  1 v [\"A\",\"B\",\"C\"]  2 v [\"A\",\"B\",\"C\"]  "
+                .to_string()
         );
     }
 }
