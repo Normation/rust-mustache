@@ -103,13 +103,13 @@ impl<'a> RenderContext<'a> {
     ) -> Result<()> {
         match *token {
             Token::Text(ref value) => self.render_text(wr, value),
-            Token::At(_) => self.render_at(wr),
+            Token::At => self.render_at(wr),
             Token::JSON(ref path, _) => self.render_json(wr, stack, path, false),
             Token::JSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
             Token::TopJSON(ref path, _) => self.render_json(wr, stack, path, false),
             Token::TopJSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
-            Token::TopSection(_, _, ref children, ref otag, _, ref src, _, ref ctag) => {
-                self.render_section_top(wr, stack, children, src, otag, ctag)
+            Token::TopSection(_, _, ref children, _, _, _, _, _) => {
+                self.render_section_top(wr, stack, children)
             }
             Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
             Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
@@ -232,7 +232,7 @@ impl<'a> RenderContext<'a> {
                 }
 
                 match *value {
-                    Data::String(ref value, _) => {
+                    Data::String(ref value) => {
                         self.write_tracking_newlines(wr, value)?;
                     }
 
@@ -243,7 +243,7 @@ impl<'a> RenderContext<'a> {
                         self.render(wr, stack, &tokens)?;
                     }
 
-                    Data::Bool(ref b, _) => {
+                    Data::Bool(ref b) => {
                         self.write_tracking_newlines(wr, &b.to_string())?;
                     }
 
@@ -288,10 +288,10 @@ impl<'a> RenderContext<'a> {
                     self.write_indent(wr)?;
                     match *value {
                         Data::Null => {}
-                        Data::String(ref v, _) => {
+                        Data::String(ref v) => {
                             self.write_tracking_newlines(wr, v)?;
                         }
-                        Data::Bool(ref v, _) => {
+                        Data::Bool(ref v) => {
                             self.write_tracking_newlines(wr, &v.to_string())?;
                         }
                         Data::Fun(ref fcell) => {
@@ -299,10 +299,10 @@ impl<'a> RenderContext<'a> {
                             let tokens = self.render_fun("", "{{", "}}", f)?;
                             self.render(wr, stack, &tokens)?;
                         }
-                        Data::Vec(ref v, _) => {
+                        Data::Vec(ref v) => {
                             self.write_tracking_newlines_json(wr, v, pretty)?;
                         }
-                        Data::Map(ref v, _) => {
+                        Data::Map(ref v) => {
                             let v: BTreeMap<_, _> = v.into_iter().collect();
                             self.write_tracking_newlines_json(wr, &v, pretty)?;
                         }
@@ -323,8 +323,8 @@ impl<'a> RenderContext<'a> {
         match self.find(path, stack) {
             None => {}
             Some(&Data::Null) => {}
-            Some(&Data::Bool(false, _)) => {}
-            Some(&Data::Vec(ref xs, _)) if xs.is_empty() => {}
+            Some(&Data::Bool(false)) => {}
+            Some(&Data::Vec(ref xs)) if xs.is_empty() => {}
             Some(_) => {
                 return Ok(());
             }
@@ -338,46 +338,31 @@ impl<'a> RenderContext<'a> {
         wr: &mut W,
         stack: &mut Vec<&Data>,
         children: &[Token],
-        src: &str,
-        otag: &str,
-        ctag: &str,
     ) -> Result<()> {
         let i = stack.clone();
         let nstack = i.iter();
+
         for v in nstack {
             match Some(v) {
                 None => {}
                 Some(value) => match *value {
-                    Data::Null => {}
-                    Data::Bool(_, _) => {
-                        stack.push(value);
-                        self.render(wr, stack, children)?;
-                        stack.pop();
-                    }
-                    Data::String(ref val, _) => {
-                        if !val.is_empty() {
+                    Data::Map(m) => {
+                        if children.contains(&Token::At) {
+                            let b: BTreeMap<_, _> = m.into_iter().collect();
+                            for (k, v) in b.iter() {
+                                stack.push(v);
+                                self.at = k.to_string();
+                                self.render(wr, stack, children)?;
+                                self.at = "".to_string();
+                                stack.pop();
+                            }
+                        } else {
                             stack.push(value);
                             self.render(wr, stack, children)?;
                             stack.pop();
                         }
                     }
-                    Data::Vec(ref vs, _) => {
-                        for v in vs.iter() {
-                            stack.push(v);
-                            self.render(wr, stack, children)?;
-                            stack.pop();
-                        }
-                    }
-                    Data::Map(_, _) => {
-                        stack.push(value);
-                        self.render(wr, stack, children)?;
-                        stack.pop();
-                    }
-                    Data::Fun(ref fcell) => {
-                        let f = &mut *fcell.borrow_mut();
-                        let tokens = self.render_fun(src, otag, ctag, f)?;
-                        self.render(wr, stack, &tokens)?;
-                    }
+                    _ => {}
                 },
             };
         }
@@ -396,33 +381,18 @@ impl<'a> RenderContext<'a> {
     ) -> Result<()> {
         match self.find(path, stack) {
             None => {}
-            Some(value) => match *value {
+            Some(value) => match value {
                 Data::Null => {}
-                Data::Bool(true, _) => self.render(wr, stack, children)?,
-                Data::Bool(false, _) => (),
-                Data::String(ref val, _) => {
+                Data::Bool(true) => self.render(wr, stack, children)?,
+                Data::Bool(false) => (),
+                Data::String(ref val) => {
                     if !val.is_empty() {
                         stack.push(value);
                         self.render(wr, stack, children)?;
                         stack.pop();
                     }
                 }
-                Data::Vec(ref vs, _) => {
-                    // FIXME:
-
-                    // let vs = vs
-                    //     .iter()
-                    //     .enumerate()
-                    //     .map(|(i, &x)| match x {
-                    //         Data::Null => x,
-                    //         Data::String(s, _) => Data::String(s, i.to_string()),
-                    //         Data::Bool(_, _) => x,
-                    //         Data::Vec(_, _) => x,
-                    //         Data::Map(_, _) => x,
-                    //         Data::Fun(_) => x,
-                    //     })
-                    //     .collect::<Vec<_>>();
-
+                Data::Vec(ref vs) => {
                     for (i, v) in vs.iter().enumerate() {
                         stack.push(v);
                         self.at = i.to_string();
@@ -431,10 +401,21 @@ impl<'a> RenderContext<'a> {
                         stack.pop();
                     }
                 }
-                Data::Map(_, _) => {
-                    stack.push(value);
-                    self.render(wr, stack, children)?;
-                    stack.pop();
+                Data::Map(m) => {
+                    if children.contains(&Token::At) {
+                        let b: BTreeMap<_, _> = m.into_iter().collect();
+                        for (k, v) in b.iter() {
+                            stack.push(v);
+                            self.at = k.to_string();
+                            self.render(wr, stack, children)?;
+                            self.at = "".to_string();
+                            stack.pop();
+                        }
+                    } else {
+                        stack.push(value);
+                        self.render(wr, stack, children)?;
+                        stack.pop();
+                    }
                 }
                 Data::Fun(ref fcell) => {
                     let f = &mut *fcell.borrow_mut();
@@ -506,7 +487,7 @@ impl<'a> RenderContext<'a> {
 
         for data in stack.iter().rev() {
             match **data {
-                Data::Map(ref m, _) => {
+                Data::Map(ref m) => {
                     if let Some(v) = m.get(&path[0]) {
                         value = Some(v);
                         break;
@@ -526,7 +507,7 @@ impl<'a> RenderContext<'a> {
 
         for part in path[1..].iter() {
             match *value {
-                Data::Map(ref m, _) => match m.get(part) {
+                Data::Map(ref m) => match m.get(part) {
                     Some(v) => {
                         value = v;
                     }
@@ -562,12 +543,9 @@ mod tests {
     fn test_json_simple_string() {
         let template = compile_str("Hello, {{$name}}").expect("failed to compile");
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "name".to_string(),
-            Data::String("Ferris".to_string(), "".to_string()),
-        );
+        ctx.insert("name".to_string(), Data::String("Ferris".to_string()));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "Hello, Ferris".to_string()
         );
     }
@@ -576,14 +554,14 @@ mod tests {
     fn test_json_simple_vec() {
         let template = compile_str("{{$v}}").expect("failed to compile");
         let v = vec![
-            Data::String("A".to_string(), "".to_string()),
-            Data::String("B".to_string(), "".to_string()),
-            Data::String("C".to_string(), "".to_string()),
+            Data::String("A".to_string()),
+            Data::String("B".to_string()),
+            Data::String("C".to_string()),
         ];
         let mut ctx = HashMap::new();
-        ctx.insert("v".to_string(), Data::Vec(v, "".to_string()));
+        ctx.insert("v".to_string(), Data::Vec(v));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "[\"A\",\"B\",\"C\"]".to_string()
         );
     }
@@ -592,18 +570,12 @@ mod tests {
     fn test_json_simple_map() {
         let template = compile_str("{{$v}}").expect("failed to compile");
         let mut v = HashMap::new();
-        v.insert(
-            "k1".to_string(),
-            Data::String("A".to_string(), "".to_string()),
-        );
-        v.insert(
-            "k2".to_string(),
-            Data::String("B".to_string(), "".to_string()),
-        );
+        v.insert("k1".to_string(), Data::String("A".to_string()));
+        v.insert("k2".to_string(), Data::String("B".to_string()));
         let mut ctx = HashMap::new();
-        ctx.insert("v".to_string(), Data::Map(v, "".to_string()));
+        ctx.insert("v".to_string(), Data::Map(v));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\"k1\":\"A\",\"k2\":\"B\"}".to_string()
         );
     }
@@ -613,11 +585,8 @@ mod tests {
         let template = compile_str("{{$b}}").expect("failed to compile");
         let b = true;
         let mut ctx = HashMap::new();
-        ctx.insert("b".to_string(), Data::Bool(b, "".to_string()));
-        assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
-            "true".to_string()
-        );
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "true".to_string());
     }
 
     #[test]
@@ -625,11 +594,8 @@ mod tests {
         let template = compile_str("{{b}}").expect("failed to compile");
         let b = true;
         let mut ctx = HashMap::new();
-        ctx.insert("b".to_string(), Data::Bool(b, "".to_string()));
-        assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
-            "true".to_string()
-        );
+        ctx.insert("b".to_string(), Data::Bool(b));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "true".to_string());
     }
 
     #[test]
@@ -637,13 +603,10 @@ mod tests {
         let template = compile_str("{{$-top-}}").expect("failed to compile");
         let b = true;
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "a".to_string(),
-            Data::String("String".to_string(), "".to_string()),
-        );
-        ctx.insert("b".to_string(), Data::Bool(b, "".to_string()));
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(b));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\"a\":\"String\",\"b\":true}".to_string()
         );
     }
@@ -653,13 +616,10 @@ mod tests {
         let template = compile_str("{{$.}}").expect("failed to compile");
         let b = true;
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "a".to_string(),
-            Data::String("String".to_string(), "".to_string()),
-        );
-        ctx.insert("b".to_string(), Data::Bool(b, "".to_string()));
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(b));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\"a\":\"String\",\"b\":true}".to_string()
         );
     }
@@ -668,13 +628,10 @@ mod tests {
     fn test_top_json_multi() {
         let template = compile_str("{{%-top-}}").expect("failed to compile");
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "a".to_string(),
-            Data::String("String".to_string(), "".to_string()),
-        );
-        ctx.insert("b".to_string(), Data::Bool(true, "".to_string()));
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
         );
     }
@@ -684,13 +641,10 @@ mod tests {
         let template = compile_str("{{%.}}").expect("failed to compile");
         let b = true;
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "a".to_string(),
-            Data::String("String".to_string(), "".to_string()),
-        );
-        ctx.insert("b".to_string(), Data::Bool(b, "".to_string()));
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(b));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
         );
     }
@@ -700,13 +654,13 @@ mod tests {
         let template = compile_str("{{#a}}{{$.}} {{/a}}").expect("failed to compile");
         let mut ctx = HashMap::new();
         let v = vec![
-            Data::String("String1".to_string(), "".to_string()),
-            Data::String("String2".to_string(), "".to_string()),
-            Data::String("String3".to_string(), "".to_string()),
+            Data::String("String1".to_string()),
+            Data::String("String2".to_string()),
+            Data::String("String3".to_string()),
         ];
-        ctx.insert("a".to_string(), Data::Vec(v, "".to_string()));
+        ctx.insert("a".to_string(), Data::Vec(v));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "String1 String2 String3 "
         );
     }
@@ -715,13 +669,10 @@ mod tests {
     fn test_top_section() {
         let template = compile_str("{{#-top-}}{{$.}}{{/-top-}}").expect("failed to compile");
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "a".to_string(),
-            Data::String("String".to_string(), "".to_string()),
-        );
-        ctx.insert("b".to_string(), Data::Bool(true, "".to_string()));
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\"a\":\"String\",\"b\":true}".to_string()
         );
     }
@@ -730,13 +681,10 @@ mod tests {
     fn test_top_section_multi() {
         let template = compile_str("{{#-top-}}{{%.}}{{/-top-}}").expect("failed to compile");
         let mut ctx = HashMap::new();
-        ctx.insert(
-            "a".to_string(),
-            Data::String("String".to_string(), "".to_string()),
-        );
-        ctx.insert("b".to_string(), Data::Bool(true, "".to_string()));
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "{\n  \"a\": \"String\",\n  \"b\": true\n}".to_string()
         );
     }
@@ -748,10 +696,10 @@ mod tests {
         )
         .expect("failed to compile");
         let mut ctx = HashMap::new();
-        ctx.insert("bt".to_string(), Data::Bool(true, "".to_string()));
-        ctx.insert("bf".to_string(), Data::Bool(false, "".to_string()));
+        ctx.insert("bt".to_string(), Data::Bool(true));
+        ctx.insert("bf".to_string(), Data::Bool(false));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "This text is rendered!".to_string()
         );
     }
@@ -762,29 +710,26 @@ mod tests {
         let template = compile_str(t).expect("failed to compile");
         let mut ctx = HashMap::new();
         let v = vec![
-            Data::String("Apple".to_string(), "".to_string()),
-            Data::String("Cherry".to_string(), "".to_string()),
-            Data::String("Orange".to_string(), "".to_string()),
+            Data::String("Apple".to_string()),
+            Data::String("Cherry".to_string()),
+            Data::String("Orange".to_string()),
         ];
         let v2 = vec![
-            Data::Bool(true, "".to_string()),
-            Data::String("String1".to_string(), "".to_string()),
-            Data::Bool(false, "".to_string()),
+            Data::Bool(true),
+            Data::String("String1".to_string()),
+            Data::Bool(false),
         ];
-        ctx.insert("fruits".to_string(), Data::Vec(v, "".to_string()));
+        ctx.insert("fruits".to_string(), Data::Vec(v));
 
         let mut m = HashMap::new();
-        m.insert(
-            "key1".to_string(),
-            Data::String("Value1".to_string(), "".to_string()),
-        );
-        m.insert("key2".to_string(), Data::Bool(true, "".to_string()));
-        m.insert("key3".to_string(), Data::Vec(v2, "".to_string()));
-        ctx.insert("m".to_string(), Data::Map(m, "".to_string()));
-        ctx.insert("bt".to_string(), Data::Bool(true, "".to_string()));
-        ctx.insert("bf".to_string(), Data::Bool(false, "".to_string()));
+        m.insert("key1".to_string(), Data::String("Value1".to_string()));
+        m.insert("key2".to_string(), Data::Bool(true));
+        m.insert("key3".to_string(), Data::Vec(v2));
+        ctx.insert("m".to_string(), Data::Map(m));
+        ctx.insert("bt".to_string(), Data::Bool(true));
+        ctx.insert("bf".to_string(), Data::Bool(false));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "- Apple\n- Cherry\n- Orange\n{\"key1\":\"Value1\",\"key2\":true,\"key3\":[true,\"String1\",false]}\n[true,\"String1\",false]\n{\n  \"bf\": false,\n  \"bt\": true,\n  \"fruits\": [\n    \"Apple\",\n    \"Cherry\",\n    \"Orange\"\n  ],\n  \"m\": {\n    \"key1\": \"Value1\",\n    \"key2\": true,\n    \"key3\": [\n      true,\n      \"String1\",\n      false\n    ]\n  }\n}\nThis text is rendered!"
         );
     }
@@ -793,24 +738,62 @@ mod tests {
     fn test_vec_at() {
         let template = compile_str("{{#v}}{{@}} {{/v}}").expect("failed to compile");
         let v = vec![
-            Data::String("A".to_string(), "".to_string()),
-            Data::String("B".to_string(), "".to_string()),
-            Data::String("C".to_string(), "".to_string()),
+            Data::String("A".to_string()),
+            Data::String("B".to_string()),
+            Data::String("C".to_string()),
         ];
         let mut ctx = HashMap::new();
-        ctx.insert("v".to_string(), Data::Vec(v, "".to_string()));
+        ctx.insert("v".to_string(), Data::Vec(v));
         assert_eq!(
-            render_data(&template, &Data::Map(ctx, "".to_string())),
+            render_data(&template, &Data::Map(ctx)),
             "0 1 2 ".to_string()
         );
     }
-    //
-    // #[test]
-    // fn test_top_section_at() {
-    //     let template = compile_str("{{#-top-}}{{$@}} {{/-top-}}").expect("failed to compile");
-    //     let mut ctx = HashMap::new();
-    //     ctx.insert("a".to_string(), Data::String("String".to_string()));
-    //     ctx.insert("b".to_string(), Data::Bool(true));
-    //     assert_eq!(render_data(&template, &Data::Map(ctx)), "a b ".to_string());
-    // }
+
+    #[test]
+    fn test_map_at() {
+        let template = compile_str("{{#m}}{{@}} {{/m}}").expect("failed to compile");
+        let mut m = HashMap::new();
+        m.insert("key1".to_string(), Data::String("Value1".to_string()));
+        m.insert("key2".to_string(), Data::Bool(true));
+        m.insert("key3".to_string(), Data::String("Value3".to_string()));
+
+        let mut ctx = HashMap::new();
+        ctx.insert("m".to_string(), Data::Map(m));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "key1 key2 key3 ".to_string()
+        );
+
+        let template = compile_str("{{#m}}{{@}} {{@}} {{.}} {{/m}}").expect("failed to compile");
+        let mut m = HashMap::new();
+        m.insert("key1".to_string(), Data::String("Value1".to_string()));
+        m.insert("key2".to_string(), Data::Bool(true));
+        m.insert("key3".to_string(), Data::String("Value3".to_string()));
+
+        let mut ctx = HashMap::new();
+        ctx.insert("m".to_string(), Data::Map(m));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "key1 key1 Value1 key2 key2 true key3 key3 Value3 ".to_string()
+        );
+    }
+
+    #[test]
+    fn test_top_section_at() {
+        let template = compile_str("{{#-top-}}{{@}} {{/-top-}}").expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
+        assert_eq!(render_data(&template, &Data::Map(ctx)), "a b ".to_string());
+
+        let template = compile_str("{{#-top-}}{{@}} {{.}} {{/-top-}}").expect("failed to compile");
+        let mut ctx = HashMap::new();
+        ctx.insert("a".to_string(), Data::String("String".to_string()));
+        ctx.insert("b".to_string(), Data::Bool(true));
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "a String b true ".to_string()
+        );
+    }
 }

@@ -5,15 +5,9 @@ use mustache::{MapBuilder, VecBuilder};
 
 #[test]
 fn test_empty_builders() {
-    assert_eq!(
-        MapBuilder::new().build(),
-        Data::Map(HashMap::new(), "".to_string())
-    );
+    assert_eq!(MapBuilder::new().build(), Data::Map(HashMap::new()));
 
-    assert_eq!(
-        VecBuilder::new().build(),
-        Data::Vec(Vec::new(), "".to_string())
-    );
+    assert_eq!(VecBuilder::new().build(), Data::Vec(Vec::new()));
 }
 
 #[test]
@@ -21,36 +15,21 @@ fn test_builders() {
     let mut pride_and_prejudice = HashMap::new();
     pride_and_prejudice.insert(
         "title".to_string(),
-        Data::String("Pride and Prejudice".to_string(), "".to_string()),
+        Data::String("Pride and Prejudice".to_string()),
     );
-    pride_and_prejudice.insert(
-        "publish_date".to_string(),
-        Data::String("1813".to_string(), "".to_string()),
-    );
+    pride_and_prejudice.insert("publish_date".to_string(), Data::String("1813".to_string()));
 
     let mut m = HashMap::new();
-    m.insert(
-        "first_name".to_string(),
-        Data::String("Jane".to_string(), "".to_string()),
-    );
-    m.insert(
-        "last_name".to_string(),
-        Data::String("Austen".to_string(), "".to_string()),
-    );
-    m.insert(
-        "age".to_string(),
-        Data::String("41".to_string(), "".to_string()),
-    );
-    m.insert("died".to_string(), Data::Bool(true, "".to_string()));
+    m.insert("first_name".to_string(), Data::String("Jane".to_string()));
+    m.insert("last_name".to_string(), Data::String("Austen".to_string()));
+    m.insert("age".to_string(), Data::String("41".to_string()));
+    m.insert("died".to_string(), Data::Bool(true));
     m.insert(
         "works".to_string(),
-        Data::Vec(
-            vec![
-                Data::String("Sense and Sensibility".to_string(), "".to_string()),
-                Data::Map(pride_and_prejudice, "".to_string()),
-            ],
-            "".to_string(),
-        ),
+        Data::Vec(vec![
+            Data::String("Sense and Sensibility".to_string()),
+            Data::Map(pride_and_prejudice),
+        ]),
     );
 
     assert_eq!(
@@ -71,7 +50,7 @@ fn test_builders() {
                     })
             })
             .build(),
-        Data::Map(m, "".to_string())
+        Data::Map(m)
     );
 }
 
@@ -88,7 +67,7 @@ fn test_map_fn_builder() {
         })
         .build();
 
-    assert_let!(Data::Map(m, _) = data => {
+    assert_let!(Data::Map(m) = data => {
         assert_let!(Some(&Data::Fun(ref f)) = m.get("count") => {
             let f = &mut *f.borrow_mut();
             assert_eq!((*f)("count: ".to_string()), "count: 1".to_string());
@@ -111,7 +90,7 @@ fn test_vec_fn_builder() {
         })
         .build();
 
-    assert_let!(Data::Vec(vs, _) = data => {
+    assert_let!(Data::Vec(vs) = data => {
         let mut iter = vs.iter();
 
         assert_let!(Some(&Data::Fun(ref f)) = iter.next() => {

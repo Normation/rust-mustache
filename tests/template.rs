@@ -357,24 +357,18 @@ fn test_render_data_to_string() {
     let template = compile_str("0{{#a}}1 {{n}} 3{{/a}}5");
 
     let result = template
-        .render_data_to_string(&Data::Map(ctx, "".to_string()))
+        .render_data_to_string(&Data::Map(ctx))
         .expect("Failed to render");
 
     assert_eq!(&result, "05");
 
     let mut ctx0 = HashMap::new();
     let mut ctx1 = HashMap::new();
-    ctx1.insert(
-        "n".to_string(),
-        Data::String("a".to_string(), "".to_string()),
-    );
-    ctx0.insert(
-        "a".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
+    ctx1.insert("n".to_string(), Data::String("a".to_string()));
+    ctx0.insert("a".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
 
     let result = template
-        .render_data_to_string(&Data::Map(ctx0, "".to_string()))
+        .render_data_to_string(&Data::Map(ctx0))
         .expect("Failed to render");
 
     assert_eq!(&result, "01 a 35");
@@ -385,50 +379,32 @@ fn test_render_sections() {
     let ctx = HashMap::new();
     let template = compile_str("0{{#a}}1 {{n}} 3{{/a}}5");
 
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
-        "05".to_string()
-    );
+    assert_eq!(render_data(&template, &Data::Map(ctx)), "05".to_string());
 
     let mut ctx = HashMap::new();
-    ctx.insert("a".to_string(), Data::Vec(Vec::new(), "".to_string()));
+    ctx.insert("a".to_string(), Data::Vec(Vec::new()));
 
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
-        "05".to_string()
-    );
+    assert_eq!(render_data(&template, &Data::Map(ctx)), "05".to_string());
 
     let mut ctx = HashMap::new();
-    ctx.insert("a".to_string(), Data::Vec(Vec::new(), "".to_string()));
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
-        "05".to_string()
-    );
+    ctx.insert("a".to_string(), Data::Vec(Vec::new()));
+    assert_eq!(render_data(&template, &Data::Map(ctx)), "05".to_string());
 
     let mut ctx0 = HashMap::new();
     let ctx1 = HashMap::new();
-    ctx0.insert(
-        "a".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
+    ctx0.insert("a".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
 
     assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
+        render_data(&template, &Data::Map(ctx0)),
         "01  35".to_string()
     );
 
     let mut ctx0 = HashMap::new();
     let mut ctx1 = HashMap::new();
-    ctx1.insert(
-        "n".to_string(),
-        Data::String("a".to_string(), "".to_string()),
-    );
-    ctx0.insert(
-        "a".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
+    ctx1.insert("n".to_string(), Data::String("a".to_string()));
+    ctx0.insert("a".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
     assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
+        render_data(&template, &Data::Map(ctx0)),
         "01 a 35".to_string()
     );
 
@@ -437,10 +413,7 @@ fn test_render_sections() {
         "a".to_string(),
         Data::Fun(RefCell::new(Box::new(|_text| "foo".to_string()))),
     );
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
-        "0foo5".to_string()
-    );
+    assert_eq!(render_data(&template, &Data::Map(ctx)), "0foo5".to_string());
 }
 
 #[test]
@@ -448,108 +421,66 @@ fn test_render_inverted_sections() {
     let template = compile_str("0{{^a}}1 3{{/a}}5");
 
     let ctx = HashMap::new();
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
-        "01 35".to_string()
-    );
+    assert_eq!(render_data(&template, &Data::Map(ctx)), "01 35".to_string());
 
     let mut ctx = HashMap::new();
-    ctx.insert("a".to_string(), Data::Vec(vec![], "".to_string()));
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
-        "01 35".to_string()
-    );
+    ctx.insert("a".to_string(), Data::Vec(vec![]));
+    assert_eq!(render_data(&template, &Data::Map(ctx)), "01 35".to_string());
 
     let mut ctx0 = HashMap::new();
     let ctx1 = HashMap::new();
-    ctx0.insert(
-        "a".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
-        "05".to_string()
-    );
+    ctx0.insert("a".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
+    assert_eq!(render_data(&template, &Data::Map(ctx0)), "05".to_string());
 
     let mut ctx0 = HashMap::new();
     let mut ctx1 = HashMap::new();
-    ctx1.insert(
-        "n".to_string(),
-        Data::String("a".to_string(), "".to_string()),
-    );
-    ctx0.insert(
-        "a".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
-    assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
-        "05".to_string()
-    );
+    ctx1.insert("n".to_string(), Data::String("a".to_string()));
+    ctx0.insert("a".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
+    assert_eq!(render_data(&template, &Data::Map(ctx0)), "05".to_string());
 }
 
 fn assert_partials_data(template: Template) {
     let ctx = HashMap::new();
     assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
+        render_data(&template, &Data::Map(ctx)),
         "<h2>Names</h2>\n".to_string()
     );
 
     let mut ctx = HashMap::new();
-    ctx.insert("names".to_string(), Data::Vec(vec![], "".to_string()));
+    ctx.insert("names".to_string(), Data::Vec(vec![]));
     assert_eq!(
-        render_data(&template, &Data::Map(ctx, "".to_string())),
+        render_data(&template, &Data::Map(ctx)),
         "<h2>Names</h2>\n".to_string()
     );
 
     let mut ctx0 = HashMap::new();
     let ctx1 = HashMap::new();
-    ctx0.insert(
-        "names".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
+    ctx0.insert("names".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
     assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
+        render_data(&template, &Data::Map(ctx0)),
         "<h2>Names</h2>\n  <strong></strong>\n\n".to_string()
     );
 
     let mut ctx0 = HashMap::new();
     let mut ctx1 = HashMap::new();
-    ctx1.insert(
-        "name".to_string(),
-        Data::String("a".to_string(), "".to_string()),
-    );
-    ctx0.insert(
-        "names".to_string(),
-        Data::Vec(vec![Data::Map(ctx1, "".to_string())], "".to_string()),
-    );
+    ctx1.insert("name".to_string(), Data::String("a".to_string()));
+    ctx0.insert("names".to_string(), Data::Vec(vec![Data::Map(ctx1)]));
     assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
+        render_data(&template, &Data::Map(ctx0)),
         "<h2>Names</h2>\n  <strong>a</strong>\n\n".to_string()
     );
 
     let mut ctx0 = HashMap::new();
     let mut ctx1 = HashMap::new();
-    ctx1.insert(
-        "name".to_string(),
-        Data::String("a".to_string(), "".to_string()),
-    );
+    ctx1.insert("name".to_string(), Data::String("a".to_string()));
     let mut ctx2 = HashMap::new();
-    ctx2.insert(
-        "name".to_string(),
-        Data::String("<b>".to_string(), "".to_string()),
-    );
+    ctx2.insert("name".to_string(), Data::String("<b>".to_string()));
     ctx0.insert(
         "names".to_string(),
-        Data::Vec(
-            vec![
-                Data::Map(ctx1, "".to_string()),
-                Data::Map(ctx2, "".to_string()),
-            ],
-            "".to_string(),
-        ),
+        Data::Vec(vec![Data::Map(ctx1), Data::Map(ctx2)]),
     );
     assert_eq!(
-        render_data(&template, &Data::Map(ctx0, "".to_string())),
+        render_data(&template, &Data::Map(ctx0)),
         "<h2>Names</h2>\n  <strong>a</strong>\n\n  <strong>&lt;b&gt;</strong>\n\n".to_string()
     );
 }
@@ -681,7 +612,7 @@ fn test_spec_lambdas() {
 
         let data = to_data(&data).expect("Failed to encode");
 
-        let mut ctx = assert_let!(Data::Map(ctx, _) = data => ctx);
+        let mut ctx = assert_let!(Data::Map(ctx) = data => ctx);
 
         // needed for the closure test.
         let mut calls = 0usize;
@@ -739,6 +670,6 @@ fn test_spec_lambdas() {
             spec_name => panic!("unimplemented lambda spec test: {}", spec_name),
         };
 
-        run_test(test, Data::Map(ctx, "".to_string()));
+        run_test(test, Data::Map(ctx));
     }
 }
