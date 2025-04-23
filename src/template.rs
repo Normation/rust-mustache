@@ -811,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    fn test_top_section_inside_section() {
+    fn test_top_section_inside_vec_section() {
         let template = compile_str("{{#v}}{{@}} {{#-top-}}{{@}} {{$.}} {{/-top-}} {{/v}}")
             .expect("failed to compile");
         let v = vec![
@@ -825,6 +825,27 @@ mod tests {
             render_data(&template, &Data::Map(ctx)),
             "0 v [\"A\",\"B\",\"C\"]  1 v [\"A\",\"B\",\"C\"]  2 v [\"A\",\"B\",\"C\"]  "
                 .to_string()
+        );
+    }
+
+    #[test]
+    fn test_top_section_inside_map_section() {
+        let template = compile_str("{{#m}}{{@}} {{#-top-}}{{@}} {{$.}} {{/-top-}} {{/m}}")
+            .expect("failed to compile");
+        let mut m = HashMap::new();
+        m.insert("key1".to_string(), Data::String("Value1".to_string()));
+        m.insert("key2".to_string(), Data::Bool(true));
+        m.insert("key3".to_string(), Data::String("Value3".to_string()));
+        let mut ctx = HashMap::new();
+        ctx.insert("m".to_string(), Data::Map(m));
+        ctx.insert(
+            "s".to_string(),
+            Data::String("This is a string".to_string()),
+        );
+
+        assert_eq!(
+            render_data(&template, &Data::Map(ctx)),
+            "key1 m {\"key1\":\"Value1\",\"key2\":true,\"key3\":\"Value3\"} s This is a string  key2 m {\"key1\":\"Value1\",\"key2\":true,\"key3\":\"Value3\"} s This is a string  key3 m {\"key1\":\"Value1\",\"key2\":true,\"key3\":\"Value3\"} s This is a string  ".to_string()
         );
     }
 }

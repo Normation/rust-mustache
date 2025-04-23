@@ -848,5 +848,10 @@ mod tests {
         fn test_at() {
             parse("{{#-top-}} {{{@}}}{{/-top-}}").unwrap();
         }
+
+        #[test]
+        fn test_at_dot() {
+            parse("{{#-top-}} {{{@}}} {{.}}{{/-top-}}").unwrap();
+        }
     }
 }
