@@ -27,16 +27,7 @@ pub enum Token {
         String,
     ),
     IncompleteSection(Vec<String>, bool, String, bool),
-    TopSection(
-        Vec<String>,
-        bool,
-        Vec<Token>,
-        String,
-        String,
-        String,
-        String,
-        String,
-    ),
+    TopSection(Vec<Token>),
     Partial(String, String, String),
 }
 
@@ -499,16 +490,7 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                 }
                                 self.tokens
                                     .push(if name.first() == Some(&"-top-".to_string()) {
-                                        Token::TopSection(
-                                            name,
-                                            inverted,
-                                            children,
-                                            self.opening_tag.clone(),
-                                            osection,
-                                            src,
-                                            tag,
-                                            self.closing_tag.clone(),
-                                        )
+                                        Token::TopSection(children)
                                     } else {
                                         Token::Section(
                                             name,

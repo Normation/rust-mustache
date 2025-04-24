@@ -108,9 +108,7 @@ impl<'a> RenderContext<'a> {
             Token::JSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
             Token::TopJSON(ref path, _) => self.render_json(wr, stack, path, false),
             Token::TopJSONMulti(ref path, _) => self.render_json(wr, stack, path, true),
-            Token::TopSection(_, _, ref children, _, _, _, _, _) => {
-                self.render_section_top(wr, stack, children)
-            }
+            Token::TopSection(ref children) => self.render_section_top(wr, stack, children),
             Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
             Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
             Token::Section(ref path, true, ref children, _, _, _, _, _) => {
