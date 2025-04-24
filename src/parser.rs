@@ -9,11 +9,6 @@ use log::{error, log};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     Text(String),
-    At,
-    JSON(Vec<String>, String),
-    JSONMulti(Vec<String>, String),
-    TopJSON(Vec<String>, String),
-    TopJSONMulti(Vec<String>, String),
     EscapedTag(Vec<String>, String),
     UnescapedTag(Vec<String>, String),
     Section(
@@ -27,8 +22,19 @@ pub enum Token {
         String,
     ),
     IncompleteSection(Vec<String>, bool, String, bool),
-    TopSection(Vec<Token>),
     Partial(String, String, String),
+    #[cfg(feature = "CFEngine")]
+    At,
+    #[cfg(feature = "CFEngine")]
+    JSON(Vec<String>, String),
+    #[cfg(feature = "CFEngine")]
+    JSONMulti(Vec<String>, String),
+    #[cfg(feature = "CFEngine")]
+    TopJSON(Vec<String>, String),
+    #[cfg(feature = "CFEngine")]
+    TopJSONMulti(Vec<String>, String),
+    #[cfg(feature = "CFEngine")]
+    TopSection(Vec<Token>),
 }
 
 /// Error type to represent parsing failure.
@@ -380,6 +386,7 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 // ignore comments
                 self.eat_whitespace();
             }
+            #[cfg(feature = "CFEngine")]
             '%' => {
                 // Data to be rendered as multi-line JSON representation
                 let name = &content[1..len];
@@ -392,6 +399,7 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                         Token::JSONMulti(name, tag)
                     });
             }
+            #[cfg(feature = "CFEngine")]
             '$' => {
                 // Data to be rendered as compact JSON representation
                 let name = get_name_or_implicit(&content[1..len])?;
@@ -429,6 +437,7 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                 self.tokens
                     .push(Token::IncompleteSection(name, true, tag, newlined));
             }
+            #[cfg(feature = "CFEngine")]
             '@' => {
                 self.tokens.push(Token::At);
             }
@@ -453,11 +462,13 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                             let mut srcs = Vec::new();
                             for child in children.iter() {
                                 match *child {
-                                    Token::Text(ref s)
-                                    | Token::JSON(_, ref s)
+                                    #[cfg(feature = "CFEngine")]
+                                    Token::JSON(_, ref s)
                                     | Token::JSONMulti(_, ref s)
                                     | Token::TopJSON(_, ref s)
-                                    | Token::TopJSONMulti(_, ref s)
+                                    | Token::TopJSONMulti(_, ref s) => srcs.push(s.clone()),
+
+                                    Token::Text(ref s)
                                     | Token::EscapedTag(_, ref s)
                                     | Token::UnescapedTag(_, ref s)
                                     | Token::Partial(_, _, ref s) => srcs.push(s.clone()),
@@ -488,6 +499,8 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                 for s in srcs.iter() {
                                     src.push_str(s);
                                 }
+
+                                #[cfg(feature = "CFEngine")]
                                 self.tokens
                                     .push(if name.first() == Some(&"-top-".to_string()) {
                                         Token::TopSection(children)
@@ -503,6 +516,19 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                             self.closing_tag.clone(),
                                         )
                                     });
+
+                                #[cfg(not(feature = "CFEngine"))]
+                                self.tokens.push(Token::Section(
+                                    name,
+                                    inverted,
+                                    children,
+                                    self.opening_tag.clone(),
+                                    osection,
+                                    src,
+                                    tag,
+                                    self.closing_tag.clone(),
+                                ));
+
                                 break;
                             } else {
                                 return Err(Error::UnclosedSection(section_name.join(".")));
