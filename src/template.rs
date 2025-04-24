@@ -262,10 +262,10 @@ impl<'a> RenderContext<'a> {
         pretty: bool,
     ) -> Result<()> {
         let json = match pretty {
-            true => serde_json::to_string_pretty(&data).unwrap(),
-            false => serde_json::to_string(&data).unwrap().to_string(),
+            true => serde_json::to_string_pretty(&data),
+            false => serde_json::to_string(&data),
         };
-        self.write_tracking_newlines(wr, &json)?;
+        self.write_tracking_newlines(wr, &json.unwrap_or(String::new()))?;
         Ok(())
     }
 
@@ -276,9 +276,10 @@ impl<'a> RenderContext<'a> {
         path: &[String],
         pretty: bool,
     ) -> Result<()> {
-        if path.first() == Some(&"-top-".to_string()) && !stack.is_empty() {
-            let v = stack.first().unwrap();
-            self.write_tracking_newlines_json(wr, &v, pretty)?;
+        if path.first() == Some(&"-top-".to_string()) {
+            if let Some(v) = stack.first() {
+                self.write_tracking_newlines_json(wr, &v, pretty)?;
+            }
         } else {
             match self.find(path, stack) {
                 None => {}
@@ -339,7 +340,6 @@ impl<'a> RenderContext<'a> {
     ) -> Result<()> {
         let i = stack.clone();
         let nstack = i.iter();
-
         for v in nstack {
             match Some(v) {
                 None => {}

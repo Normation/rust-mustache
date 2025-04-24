@@ -823,17 +823,17 @@ mod tests {
 
         #[test]
         fn test_top_section() {
-            parse("{{#-top-}} {{.}}{{/-top-}}").unwrap();
+            assert!(parse("{{#-top-}} {{.}}{{/-top-}}").is_ok());
         }
 
         #[test]
         fn test_at() {
-            parse("{{#-top-}} {{{@}}}{{/-top-}}").unwrap();
+            assert!(parse("{{#-top-}} {{{@}}}{{/-top-}}").is_ok());
         }
 
         #[test]
         fn test_at_dot() {
-            parse("{{#-top-}} {{{@}}} {{.}}{{/-top-}}").unwrap();
+            assert!(parse("{{#-top-}} {{{@}}} {{.}}{{/-top-}}").is_ok());
         }
     }
 }
