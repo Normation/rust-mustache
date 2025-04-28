@@ -12,6 +12,7 @@ use super::{to_data, Data};
 /// This type is not intended to be matched exhaustively as new variants
 /// may be added in future without a version bump.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     NestedOptions,
     UnsupportedType,
@@ -19,9 +20,6 @@ pub enum Error {
     KeyIsNotString,
     NoDataToEncode,
     Message(String),
-
-    #[doc(hidden)]
-    __Nonexhaustive,
 }
 
 impl serde::ser::Error for Error {
@@ -45,7 +43,6 @@ impl fmt::Display for Error {
                 Error::KeyIsNotString => "key is not a string",
                 Error::NoDataToEncode => "the encodable type created no data",
                 Error::Message(ref s) => s,
-                Error::__Nonexhaustive => unreachable!(),
             }
         )
     }
@@ -58,7 +55,7 @@ pub struct Encoder;
 
 impl Encoder {
     pub fn new() -> Encoder {
-        Encoder::default()
+        Encoder
     }
 }
 
@@ -271,7 +268,7 @@ impl ser::SerializeSeq for SerializeVec {
     where
         T: Serialize,
     {
-        self.vec.push(to_data(&value)?);
+        self.vec.push(to_data(value)?);
         Ok(())
     }
 
@@ -320,7 +317,7 @@ impl ser::SerializeTupleVariant for SerializeTupleVariant {
     where
         T: Serialize,
     {
-        self.vec.push(to_data(&value)?);
+        self.vec.push(to_data(value)?);
         Ok(())
     }
 
@@ -357,7 +354,7 @@ impl ser::SerializeMap for SerializeMap {
         // Taking the key should only fail if this gets called before
         // serialize_key, which is a bug in the library.
         let key = self.next_key.take().ok_or(Error::MissingElements)?;
-        self.map.insert(key, to_data(&value)?);
+        self.map.insert(key, to_data(value)?);
         Ok(())
     }
 
@@ -391,7 +388,7 @@ impl ser::SerializeStructVariant for SerializeStructVariant {
     where
         T: Serialize,
     {
-        self.map.insert(String::from(key), to_data(&value)?);
+        self.map.insert(String::from(key), to_data(value)?);
         Ok(())
     }
 

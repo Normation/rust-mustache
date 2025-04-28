@@ -29,7 +29,7 @@ jobs:
           components: clippy
 
       - name: Run clippy
-        run: cargo clippy --locked -- -D warnings
+        run: cargo clippy -- -D warnings
 
   test:
     name: test / ${{ matrix.name }}
@@ -58,4 +58,4 @@ jobs:
           toolchain: ${{ matrix.rust }}
 
       - name: Run tests
-        run: cargo test --locked --all
+        run: cargo test --all

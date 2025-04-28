@@ -6,10 +6,10 @@ use std::mem;
 use std::str;
 use std::vec;
 
-use compiler::Compiler;
+use crate::compiler::Compiler;
 // for bug!
+use crate::parser::Token;
 use log::{error, log};
-use parser::Token;
 use serde::Serialize;
 
 use super::{to_data, Context, Data, Error, Result};
@@ -26,9 +26,9 @@ pub struct Template {
 /// not exported outside of mustache.
 pub fn new(ctx: Context, tokens: Vec<Token>, partials: HashMap<String, Vec<Token>>) -> Template {
     Template {
-        ctx: ctx,
-        tokens: tokens,
-        partials: partials,
+        ctx,
+        tokens,
+        partials,
     }
 }
 
@@ -76,7 +76,7 @@ struct RenderContext<'a> {
 impl<'a> RenderContext<'a> {
     fn new(template: &'a Template) -> RenderContext<'a> {
         RenderContext {
-            template: template,
+            template,
             indent: "".to_string(),
             line_start: true,
             at: "".to_string(),
@@ -331,9 +331,9 @@ impl<'a> RenderContext<'a> {
     ) -> Result<()> {
         match self.find(path, stack) {
             None => {}
-            Some(&Data::Null) => {}
-            Some(&Data::Bool(false)) => {}
-            Some(&Data::Vec(ref xs)) if xs.is_empty() => {}
+            Some(Data::Null) => {}
+            Some(Data::Bool(false)) => {}
+            Some(Data::Vec(xs)) if xs.is_empty() => {}
             Some(_) => {
                 return Ok(());
             }
@@ -394,14 +394,14 @@ impl<'a> RenderContext<'a> {
                 Data::Null => {}
                 Data::Bool(true) => self.render(wr, stack, children)?,
                 Data::Bool(false) => (),
-                Data::String(ref val) => {
+                Data::String(val) => {
                     if !val.is_empty() {
                         stack.push(value);
                         self.render(wr, stack, children)?;
                         stack.pop();
                     }
                 }
-                Data::Vec(ref vs) => {
+                Data::Vec(vs) => {
                     for (i, v) in vs.iter().enumerate() {
                         stack.push(v);
                         self.at = i.to_string();
@@ -434,7 +434,7 @@ impl<'a> RenderContext<'a> {
                         stack.pop();
                     }
                 }
-                Data::Fun(ref fcell) => {
+                Data::Fun(fcell) => {
                     let f = &mut *fcell.borrow_mut();
                     let tokens = self.render_fun(src, otag, ctag, f)?;
                     self.render(wr, stack, &tokens)?;
@@ -453,11 +453,11 @@ impl<'a> RenderContext<'a> {
     ) -> Result<()> {
         match self.template.partials.get(name) {
             None => (),
-            Some(ref tokens) => {
+            Some(tokens) => {
                 let mut indent = self.indent.clone() + indent;
 
                 mem::swap(&mut self.indent, &mut indent);
-                self.render(wr, stack, &tokens)?;
+                self.render(wr, stack, tokens)?;
                 mem::swap(&mut self.indent, &mut indent);
             }
         };
