@@ -53,12 +53,11 @@ impl fmt::Display for Error {
         match *self {
             Error::BadClosingTag(actual, expected) => write!(
                 f,
-                "character {:?} was unexpected in the closing tag, expected {:?}",
-                actual, expected
+                "character {actual:?} was unexpected in the closing tag, expected {expected:?}",
             ),
-            Error::UnclosedSection(ref name) => write!(f, "found an unclosed section: {:?}", name),
+            Error::UnclosedSection(ref name) => write!(f, "found an unclosed section: {name:?}"),
             Error::EarlySectionClose(ref name) => {
-                write!(f, "found a closing tag for an unopened section {:?}", name)
+                write!(f, "found a closing tag for an unopened section {name:?}")
             }
             Error::UnclosedTag => write!(f, "found an unclosed tag"),
             Error::UnbalancedUnescapeTag => write!(f, "found an unbalanced unescape tag"),

@@ -66,10 +66,10 @@ impl fmt::Debug for Data {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Data::Null => write!(f, "Null"),
-            Data::String(ref v) => write!(f, "StrVal({})", v),
-            Data::Bool(v) => write!(f, "Bool({:?})", v),
-            Data::Vec(ref v) => write!(f, "VecVal({:?})", v),
-            Data::Map(ref v) => write!(f, "Map({:?})", v),
+            Data::String(ref v) => write!(f, "StrVal({v})"),
+            Data::Bool(v) => write!(f, "Bool({v:?})"),
+            Data::Vec(ref v) => write!(f, "VecVal({v:?})"),
+            Data::Map(ref v) => write!(f, "Map({v:?})"),
             Data::Fun(_) => write!(f, "Fun(...)"),
         }
     }
