@@ -118,11 +118,11 @@ impl<'a> RenderContext<'a> {
             Token::Text(ref value) => self.render_text(wr, value),
             Token::EscapedTag(ref path, _) => self.render_etag(wr, stack, path),
             Token::UnescapedTag(ref path, _) => self.render_utag(wr, stack, path),
-            Token::Section(ref path, true, ref children, _, _, _, _, _) => {
+            Token::Section(ref path, true, ref children, _, _, _) => {
                 self.render_inverted_section(wr, stack, path, children)
             }
-            Token::Section(ref path, false, ref children, ref otag, _, ref src, _, ref ctag) => {
-                self.render_section(wr, stack, path, children, src, otag, ctag)
+            Token::Section(ref path, false, ref children, _, _, ref fdata) => {
+                self.render_section(wr, stack, path, children, fdata)
             }
             Token::Partial(ref name, ref indent, _) => self.render_partial(wr, stack, name, indent),
             Token::IncompleteSection(..) => {
@@ -384,9 +384,7 @@ impl<'a> RenderContext<'a> {
         stack: &mut Vec<&Data>,
         path: &[String],
         children: &[Token],
-        src: &str,
-        otag: &str,
-        ctag: &str,
+        fdata: &[String],
     ) -> Result<()> {
         match self.find(path, stack) {
             None => {}
@@ -436,7 +434,7 @@ impl<'a> RenderContext<'a> {
                 }
                 Data::Fun(fcell) => {
                     let f = &mut *fcell.borrow_mut();
-                    let tokens = self.render_fun(src, otag, ctag, f)?;
+                    let tokens = self.render_fun(&fdata[1], &fdata[0], &fdata[2], f)?;
                     self.render(wr, stack, &tokens)?;
                 }
             },

@@ -11,16 +11,7 @@ pub enum Token {
     Text(String),
     EscapedTag(Vec<String>, String),
     UnescapedTag(Vec<String>, String),
-    Section(
-        Vec<String>,
-        bool,
-        Vec<Token>,
-        String,
-        String,
-        String,
-        String,
-        String,
-    ),
+    Section(Vec<String>, bool, Vec<Token>, String, String, Vec<String>),
     IncompleteSection(Vec<String>, bool, String, bool),
     Partial(String, String, String),
     #[cfg(feature = "CFEngine")]
@@ -473,14 +464,12 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                         _,
                                         _,
                                         _,
-                                        _,
                                         ref osection,
-                                        ref src,
                                         ref csection,
-                                        _,
+                                        ref fdata,
                                     ) => {
                                         srcs.push(osection.clone());
-                                        srcs.push(src.clone());
+                                        srcs.push(fdata[1].clone());
                                         srcs.push(csection.clone());
                                     }
                                     _ => bug!("Incomplete sections should not be nested"),
@@ -497,33 +486,22 @@ impl<'a, T: Iterator<Item = char>> Parser<'a, T> {
                                     src.push_str(s);
                                 }
 
+                                let fdata =
+                                    vec![self.opening_tag.clone(), src, self.closing_tag.clone()];
+
                                 #[cfg(feature = "CFEngine")]
                                 self.tokens
                                     .push(if name.first() == Some(&"-top-".to_string()) {
                                         Token::TopSection(children)
                                     } else {
                                         Token::Section(
-                                            name,
-                                            inverted,
-                                            children,
-                                            self.opening_tag.clone(),
-                                            osection,
-                                            src,
-                                            tag,
-                                            self.closing_tag.clone(),
+                                            name, inverted, children, osection, tag, fdata,
                                         )
                                     });
 
                                 #[cfg(not(feature = "CFEngine"))]
                                 self.tokens.push(Token::Section(
-                                    name,
-                                    inverted,
-                                    children,
-                                    self.opening_tag.clone(),
-                                    osection,
-                                    src,
-                                    tag,
-                                    self.closing_tag.clone(),
+                                    name, inverted, children, osection, tag, fdata,
                                 ));
 
                                 break;
