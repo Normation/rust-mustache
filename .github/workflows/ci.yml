@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt
 
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy
 
@@ -42,7 +42,7 @@ jobs:
           - ubuntu-22.04-arm
         include:
           - name: stable
-            rust: stable
+            rust: nightly
           - name: beta
             rust: beta
           - name: nightly
