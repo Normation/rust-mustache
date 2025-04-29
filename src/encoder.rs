@@ -3,9 +3,9 @@ use std::error::Error as StdError;
 use std::fmt::{self, Display};
 use std::result::Result as StdResult;
 
-use serde::{self, ser, Serialize};
+use serde::{self, Serialize, ser};
 
-use super::{to_data, Data};
+use super::{Data, to_data};
 
 /// Error type to represent encoding failure.
 ///

@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::string::ToString;
 
-use super::{to_data, Data};
+use super::{Data, to_data};
 use crate::encoder::Error;
 
 /// `MapBuilder` is a helper type that construct `Data` types.

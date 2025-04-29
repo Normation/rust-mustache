@@ -12,7 +12,7 @@ use crate::parser::Token;
 use log::{error, log};
 use serde::Serialize;
 
-use super::{to_data, Context, Data, Error, Result};
+use super::{Context, Data, Error, Result, to_data};
 
 /// `Template` represents a compiled mustache file.
 #[derive(Debug, Clone)]
